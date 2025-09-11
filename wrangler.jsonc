@@ -1,0 +1,52 @@
+{
+  "name": "constellation-connect",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-31",
+  "workers_dev": true,
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "public"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DRAWING_ROOM",
+        "class_name": "DrawingRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "DrawingRoom"
+      ]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "space-apps-drawing",
+      "database_id": "604e44e2-8f59-4a44-bdab-ef8228c682b8"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "DRAWINGS_KV",
+      "id": "4562dcfdd36a4ff5a0cdc2884dfd6283"
+    }
+  ],
+  "vars": {
+    "STAGE": "production"
+  }
+}
