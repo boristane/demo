@@ -10,97 +10,118 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <div class="header-content">
-          <div>
-            <h1 class="title">
-                Collaborative Constellation
-            </h1>
-            <div class="participants-list" style="font-size: 14px; margin-top: 4px">Draw together and watch AI transform it into a unique constellation</div>
-          </div>
-            <div class="room-info">
-                <span class="room-label">Room:</span>
-                <span class="room-id" id="roomId"></span>
-                <button class="copy-btn" id="copyBtn" title="Copy room link">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                </button>
+    <div id="lobbyView" style="display: none;">
+        <header>
+            <div class="header-content">
+                <div>
+                    <h1 class="title">Collaborative Constellation</h1>
+                    <div class="participants-list" style="font-size: 14px; margin-top: 4px">Join an active room or start a new one</div>
+                </div>
+                <button class="btn btn-primary" id="createRoomBtn">Create new room</button>
             </div>
-        </div>
-    </header>
+        </header>
 
-    <div class="controls-bar">
-        <button class="btn btn-clear" id="clearBtn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 6h18"></path>
-                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-            </svg>
-            <span class="btn-text">Clear</span>
-        </button>
-        
-        <button class="btn btn-analyze" id="analyzeBtn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-            </svg>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-spinner" style="display: none;">
-                <path d="M21 12a9 9 0 11-6.219-8.56"></path>
-            </svg>
-            <span class="btn-text">Create Constellation</span>
-        </button>
+        <main class="lobby-main">
+            <h2 class="lobby-heading">Active rooms</h2>
+            <ul id="lobbyRoomsList" class="lobby-rooms"></ul>
+            <div id="lobbyEmpty" class="lobby-empty">No active rooms yet. Start one!</div>
+        </main>
     </div>
 
-    <main>
-        <aside class="participants-panel">
-            <h2>Participants</h2>
-            <ul id="participantsList" class="participants-list">
-                <!-- Participants will be added here dynamically -->
-            </ul>
-        </aside>
+    <div id="roomView" style="display: none;">
+        <header>
+            <div class="header-content">
+              <div>
+                <h1 class="title">
+                    Collaborative Constellation
+                </h1>
+                <div class="participants-list" style="font-size: 14px; margin-top: 4px">Draw together and watch AI transform it into a unique constellation</div>
+              </div>
+                <div class="room-info">
+                    <a class="room-label" href="/" id="backToLobbyBtn" style="margin-right: 12px; text-decoration: none;">&larr; Lobby</a>
+                    <span class="room-label">Room:</span>
+                    <span class="room-id" id="roomId"></span>
+                    <button class="copy-btn" id="copyBtn" title="Copy room link">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
 
-        <div class="canvas-wrapper">
-            <canvas id="drawingCanvas"></canvas>
-            <div class="drawing-instruction" id="drawingInstruction">
-                Click and drag to draw
+        <div class="controls-bar">
+            <button class="btn btn-clear" id="clearBtn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18"></path>
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                </svg>
+                <span class="btn-text">Clear</span>
+            </button>
+
+            <button class="btn btn-analyze" id="analyzeBtn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-spinner" style="display: none;">
+                    <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+                </svg>
+                <span class="btn-text">Create Constellation</span>
+            </button>
+        </div>
+
+        <main>
+            <aside class="participants-panel">
+                <h2>Participants</h2>
+                <ul id="participantsList" class="participants-list">
+                    <!-- Participants will be added here dynamically -->
+                </ul>
+            </aside>
+
+            <div class="canvas-wrapper">
+                <canvas id="drawingCanvas"></canvas>
+                <div class="drawing-instruction" id="drawingInstruction">
+                    Click and drag to draw
+                </div>
+            </div>
+        </main>
+
+        <div class="modal" id="nameModal">
+            <div class="modal-content" style="max-width: 400px;">
+                <h2>Welcome!</h2>
+                <p>Please enter your name to join the drawing room:</p>
+                <input type="text" id="nameInput" placeholder="Your name" maxlength="20" autofocus>
+                <button class="btn btn-primary" id="joinBtn">Join Room</button>
             </div>
         </div>
-    </main>
+
+        <div class="modal" id="resultsModal">
+            <div class="modal-content modal-content-large">
+                <button class="modal-close" id="closeResultsModal">&times;</button>
+                <div class="sky-view" id="skyView">
+                    <h2>Sky View</h2>
+                    <img id="skyViewImage" src="" alt="Sky view of constellation" style="display: none;">
+                    <div class="sky-view-loading" id="skyViewLoading">Generating sky view...</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-download" id="downloadBtn" style="display: none;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download Image
+                    </button>
+                    <button class="btn btn-primary" id="closeResultsBtn">Continue Drawing</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="notification" id="notification"></div>
-
-    <div class="modal" id="nameModal">
-        <div class="modal-content" style="max-width: 400px;">
-            <h2>Welcome!</h2>
-            <p>Please enter your name to join the drawing room:</p>
-            <input type="text" id="nameInput" placeholder="Your name" maxlength="20" autofocus>
-            <button class="btn btn-primary" id="joinBtn">Join Room</button>
-        </div>
-    </div>
-
-    <div class="modal" id="resultsModal">
-        <div class="modal-content modal-content-large">
-            <button class="modal-close" id="closeResultsModal">&times;</button>
-            <div class="sky-view" id="skyView">
-                <h2>Sky View</h2>
-                <img id="skyViewImage" src="" alt="Sky view of constellation" style="display: none;">
-                <div class="sky-view-loading" id="skyViewLoading">Generating sky view...</div>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-download" id="downloadBtn" style="display: none;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    Download Image
-                </button>
-                <button class="btn btn-primary" id="closeResultsBtn">Continue Drawing</button>
-            </div>
-        </div>
-    </div>
 
     <script src="app.js"></script>
 </body>
