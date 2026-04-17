@@ -12,24 +12,38 @@
 <body>
     <header>
         <div class="header-content">
-          <div>
-            <h1 class="title">
-                Collaborative Constellation
-            </h1>
-            <div class="participants-list" style="font-size: 14px; margin-top: 4px">Draw together and watch AI transform it into a unique constellation</div>
-          </div>
-            <div class="room-info">
-                <span class="room-label">Room:</span>
-                <span class="room-id" id="roomId"></span>
-                <button class="copy-btn" id="copyBtn" title="Copy room link">
+            <div>
+                <h1 class="title">Collaborative Constellation</h1>
+                <div class="subtitle">Draw together and watch AI turn it into sky lore</div>
+            </div>
+            <div class="header-actions">
+                <a href="/gallery.html" class="gallery-link" title="View gallery">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
                     </svg>
-                </button>
+                    <span>Gallery</span>
+                </a>
+                <div class="room-info">
+                    <span class="room-label">Room:</span>
+                    <span class="room-id" id="roomId"></span>
+                    <button class="copy-btn" id="copyBtn" title="Copy room link">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
     </header>
+
+    <div class="prompt-banner" id="promptBanner">
+        <span class="prompt-label">Today's challenge</span>
+        <span class="prompt-text" id="promptText">Loading…</span>
+    </div>
 
     <div class="controls-bar">
         <button class="btn btn-clear" id="clearBtn">
@@ -40,7 +54,16 @@
             </svg>
             <span class="btn-text">Clear</span>
         </button>
-        
+
+        <div class="reactions-bar" id="reactionsBar" aria-label="Reactions">
+            <button class="reaction-btn" data-emoji="✨" type="button">✨</button>
+            <button class="reaction-btn" data-emoji="🌟" type="button">🌟</button>
+            <button class="reaction-btn" data-emoji="💫" type="button">💫</button>
+            <button class="reaction-btn" data-emoji="⭐" type="button">⭐</button>
+            <button class="reaction-btn" data-emoji="❤️" type="button">❤️</button>
+            <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
+        </div>
+
         <button class="btn btn-analyze" id="analyzeBtn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
                 <circle cx="11" cy="11" r="8"></circle>
@@ -56,16 +79,14 @@
     <main>
         <aside class="participants-panel">
             <h2>Participants</h2>
-            <ul id="participantsList" class="participants-list">
-                <!-- Participants will be added here dynamically -->
-            </ul>
+            <ul id="participantsList" class="participants-list"></ul>
         </aside>
 
         <div class="canvas-wrapper">
             <canvas id="drawingCanvas"></canvas>
-            <div class="drawing-instruction" id="drawingInstruction">
-                Click and drag to draw
-            </div>
+            <div class="cursor-layer" id="cursorLayer"></div>
+            <div class="reactions-layer" id="reactionsLayer"></div>
+            <div class="drawing-instruction" id="drawingInstruction">Click and drag to draw</div>
         </div>
     </main>
 
@@ -83,11 +104,25 @@
     <div class="modal" id="resultsModal">
         <div class="modal-content modal-content-large">
             <button class="modal-close" id="closeResultsModal">&times;</button>
-            <div class="sky-view" id="skyView">
-                <h2>Sky View</h2>
-                <img id="skyViewImage" src="" alt="Sky view of constellation" style="display: none;">
-                <div class="sky-view-loading" id="skyViewLoading">Generating sky view...</div>
+
+            <div class="result-header">
+                <span class="result-eyebrow">The stars revealed…</span>
+                <input class="constellation-name-input" id="constellationNameInput" maxlength="60" placeholder="Constellation name">
             </div>
+
+            <div class="story-card" id="storyCard">
+                <svg class="story-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+                <p class="story-text" id="storyText"></p>
+            </div>
+
+            <div class="sky-view" id="skyView">
+                <img id="skyViewImage" src="" alt="Sky view of constellation" style="display: none;">
+                <div class="sky-view-loading" id="skyViewLoading">Generating sky view…</div>
+            </div>
+
             <div class="modal-actions">
                 <button class="btn btn-download" id="downloadBtn" style="display: none;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -95,7 +130,15 @@
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
-                    Download Image
+                    Download
+                </button>
+                <button class="btn btn-save" id="saveBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    Save to Gallery
                 </button>
                 <button class="btn btn-primary" id="closeResultsBtn">Continue Drawing</button>
             </div>

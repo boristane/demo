@@ -9,18 +9,6 @@ export interface Env {
   ASSETS: Fetcher
 }
 
-interface DrawingMessage {
-  type: 'join' | 'draw_line' | 'clear' | 'user_joined' | 'user_left' | 'line_drawn' | 'canvas_cleared' | 'init' | 'constellation_found'
-  userId?: string
-  name?: string
-  color?: string
-  from?: Point
-  to?: Point
-  participants?: Array<[string, Participant]>
-  lines?: Line[]
-  result?: string
-}
-
 interface Point {
   x: number
   y: number
@@ -39,29 +27,66 @@ interface Participant {
 }
 
 const COLORS = [
-  '#e91e63', // Pink
-  '#9c27b0', // Purple
-  '#673ab7', // Deep Purple
-  '#3f51b5', // Indigo
-  '#2196f3', // Blue
-  '#00bcd4', // Cyan
-  '#009688', // Teal
-  '#4caf50', // Green
-  '#8bc34a', // Light Green
-  '#ff9800', // Orange
-  '#ff5722', // Deep Orange
-  '#795548', // Brown
+  '#e91e63',
+  '#9c27b0',
+  '#673ab7',
+  '#3f51b5',
+  '#2196f3',
+  '#00bcd4',
+  '#009688',
+  '#4caf50',
+  '#8bc34a',
+  '#ff9800',
+  '#ff5722',
+  '#795548',
 ]
+
+// 20 daily prompts, rotated by day-of-year.
+const DAILY_PROMPTS = [
+  'Draw a dragon flying across the sky',
+  'Draw a whale swimming through stars',
+  'Draw a hero wielding a sword',
+  'Draw a castle on a distant cloud',
+  'Draw a phoenix rising from embers',
+  'Draw the tree of life',
+  'Draw a heart made of starlight',
+  'Draw a ship sailing the cosmos',
+  'Draw a crown of seven stars',
+  'Draw a snake coiled in the heavens',
+  'Draw a butterfly crossing the galaxy',
+  'Draw a compass rose',
+  'Draw an owl watching the night',
+  'Draw a spiral galaxy',
+  'Draw a crescent moon with a face',
+  'Draw a stargazer looking up',
+  'Draw a wolf howling at the stars',
+  'Draw an infinity symbol',
+  'Draw a key to the heavens',
+  'Draw a lighthouse at the edge of space',
+]
+
+function dayOfYearUTC(): number {
+  const now = new Date()
+  const start = Date.UTC(now.getUTCFullYear(), 0, 0)
+  const diff = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - start
+  return Math.floor(diff / 86400000)
+}
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10)
+}
 
 export class DrawingRoom {
   private sessions: Map<WebSocket, string> = new Map()
   private participants: Map<string, Participant> = new Map()
+  private cursors: Map<string, { x: number; y: number; t: number }> = new Map()
   private lines: Line[] = []
   private colorIndex: number = 0
+  private lastReactionAt: Map<string, number> = new Map()
 
   async fetch(request: Request) {
     const url = new URL(request.url)
-    
+
     if (url.pathname === '/websocket') {
       if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('Expected WebSocket', { status: 400 })
@@ -69,9 +94,9 @@ export class DrawingRoom {
 
       const pair = new WebSocketPair()
       const [client, server] = Object.values(pair)
-      
+
       await this.handleSession(server)
-      
+
       return new Response(null, {
         status: 101,
         webSocket: client,
@@ -83,77 +108,115 @@ export class DrawingRoom {
 
   async handleSession(webSocket: WebSocket) {
     webSocket.accept()
-    
+
     const userId = crypto.randomUUID()
     this.sessions.set(webSocket, userId)
 
     webSocket.addEventListener('message', async (event) => {
       try {
         const message = JSON.parse(event.data as string)
-        
+
         switch (message.type) {
-          case 'join':
-            // Assign a color to the new user
+          case 'join': {
             const color = COLORS[this.colorIndex % COLORS.length]
             this.colorIndex++
-            
-            // Store participant info
+
             this.participants.set(userId, {
-              name: message.name || 'Anonymous',
-              color: color
+              name: (message.name || 'Anonymous').slice(0, 24),
+              color,
             })
-            
-            // Send init message to the joining user
+
             webSocket.send(JSON.stringify({
               type: 'init',
               userId,
               color,
               participants: Array.from(this.participants.entries()),
-              lines: this.lines
+              lines: this.lines,
             }))
-            
-            // Notify others about the new user
+
             this.broadcast({
               type: 'user_joined',
               userId,
               name: message.name,
-              color
+              color,
             }, webSocket)
             break
-            
-          case 'draw_line':
+          }
+
+          case 'draw_line': {
             const participant = this.participants.get(userId)
-            if (participant) {
-              const line: Line = {
-                from: message.from,
-                to: message.to,
-                userId,
-                color: participant.color
-              }
-              this.lines.push(line)
-              
-              // Keep only last 1000 lines
-              if (this.lines.length > 1000) {
-                this.lines = this.lines.slice(-500)
-              }
-              
-              // Broadcast the line to all users
-              this.broadcast({
-                type: 'line_drawn',
-                from: message.from,
-                to: message.to,
-                color: participant.color,
-                userId
-              })
+            if (!participant) break
+            const line: Line = {
+              from: message.from,
+              to: message.to,
+              userId,
+              color: participant.color,
             }
-            break
-            
-          case 'clear':
-            this.lines = []
+            this.lines.push(line)
+            if (this.lines.length > 1000) {
+              this.lines = this.lines.slice(-500)
+            }
             this.broadcast({
-              type: 'canvas_cleared'
+              type: 'line_drawn',
+              from: message.from,
+              to: message.to,
+              color: participant.color,
+              userId,
             })
             break
+          }
+
+          case 'clear':
+            this.lines = []
+            this.broadcast({ type: 'canvas_cleared' })
+            break
+
+          case 'cursor_move': {
+            const participant = this.participants.get(userId)
+            if (!participant) break
+            this.cursors.set(userId, { x: message.x, y: message.y, t: Date.now() })
+            this.broadcast({
+              type: 'cursor_update',
+              userId,
+              x: message.x,
+              y: message.y,
+              color: participant.color,
+              name: participant.name,
+            }, webSocket)
+            break
+          }
+
+          case 'cursor_leave': {
+            this.cursors.delete(userId)
+            this.broadcast({ type: 'cursor_gone', userId }, webSocket)
+            break
+          }
+
+          case 'reaction': {
+            const last = this.lastReactionAt.get(userId) || 0
+            if (Date.now() - last < 300) break
+            this.lastReactionAt.set(userId, Date.now())
+            const allowed = ['✨', '🌟', '💫', '⭐', '❤️', '🔥']
+            if (!allowed.includes(message.emoji)) break
+            this.broadcast({
+              type: 'reaction_sent',
+              emoji: message.emoji,
+              x: message.x,
+              y: message.y,
+              userId,
+            })
+            break
+          }
+
+          case 'constellation_saved': {
+            this.broadcast({
+              type: 'constellation_saved',
+              id: message.id,
+              name: message.name,
+              by: this.participants.get(userId)?.name,
+            }, webSocket)
+            break
+          }
         }
       } catch (error) {
         console.error('Error handling message:', error)
@@ -162,26 +225,21 @@ export class DrawingRoom {
 
     webSocket.addEventListener('close', () => {
       this.sessions.delete(webSocket)
+      this.cursors.delete(userId)
       const participant = this.participants.get(userId)
-      
       if (participant) {
         this.participants.delete(userId)
-        
-        // Notify others that the user left
-        this.broadcast({
-          type: 'user_left',
-          userId
-        })
+        this.broadcast({ type: 'user_left', userId })
+        this.broadcast({ type: 'cursor_gone', userId })
       }
     })
   }
 
-  broadcast(message: DrawingMessage, exclude?: WebSocket) {
+  broadcast(message: Record<string, unknown>, exclude?: WebSocket) {
     const messageStr = JSON.stringify(message)
-    
     this.sessions.forEach((_, ws) => {
       if (ws !== exclude && ws.readyState === WebSocket.READY_STATE_OPEN) {
-        ws.send(messageStr)
+        try { ws.send(messageStr) } catch {}
       }
     })
   }
@@ -199,82 +257,78 @@ app.get('/api/room/:roomId/websocket', async (c) => {
   const roomId = c.req.param('roomId')
   const id = c.env.DRAWING_ROOM.idFromName(roomId)
   const room = c.env.DRAWING_ROOM.get(id)
-  
+
   return room.fetch(new Request('http://fake-host/websocket', {
-    headers: {
-      'Upgrade': 'websocket',
-    },
+    headers: { 'Upgrade': 'websocket' },
   }))
 })
 
+app.get('/api/daily-prompt', async (c) => {
+  const day = todayUTC()
+  const prompt = DAILY_PROMPTS[dayOfYearUTC() % DAILY_PROMPTS.length]
+  return c.json({ date: day, prompt })
+})
+
+function extractText(resp: unknown): string {
+  if (!resp) return ''
+  if (typeof resp === 'string') return resp
+  if (typeof resp === 'object') {
+    const r = resp as Record<string, unknown>
+    if (typeof r.response === 'string') return r.response
+    if (typeof r.description === 'string') return r.description
+    if (typeof r.text === 'string') return r.text
+    const firstStr = Object.values(r).find((v) => typeof v === 'string')
+    if (typeof firstStr === 'string') return firstStr
+  }
+  return ''
+}
+
+function parseNameAndStory(raw: string): { name: string; story: string } {
+  const nameMatch = raw.match(/NAME:\s*(.+?)(?:\n|$)/i)
+  const storyMatch = raw.match(/STORY:\s*([\s\S]+?)(?:\n\s*[A-Z][A-Z ]+:|$)/i)
+  const name = nameMatch ? nameMatch[1].trim().replace(/^["']|["']$/g, '') : ''
+  const story = storyMatch ? storyMatch[1].trim() : ''
+  if (name && story) return { name, story }
+  const fallbackName = raw.split(/[\n.]/)[0].slice(0, 60).trim() || 'The Unnamed One'
+  const fallbackStory = raw.trim().slice(0, 600)
+  return {
+    name: name || fallbackName,
+    story: story || fallbackStory,
+  }
+}
+
 app.post('/api/analyze', async (c) => {
   try {
-    const { imageData } = await c.req.json()
-    
-    // Remove the data:image/png;base64, prefix if present
+    const { imageData } = await c.req.json<{ imageData: string }>()
+
     const base64Data = imageData.replace(/^data:image\/[a-z]+;base64,/, '')
-    
-    // Convert base64 to array buffer
-    const imageBuffer = Uint8Array.from(atob(base64Data), char => char.charCodeAt(0))
+    const imageBuffer = Uint8Array.from(atob(base64Data), (ch) => ch.charCodeAt(0))
 
-    // First analysis - identify what the drawing represents and create a story
-    const identificationPrompt = `
-Analyze this hand-drawn image and transform it into a realistic NASA constellation story:
+    const identificationPrompt = `You are an ancient sky-lore storyteller. Look at this hand-drawn constellation and respond in EXACTLY this format:
 
-1. **Shape Recognition**: What shape or pattern do you see in this drawing?
-2. **Constellation Name**: Give it a creative, space-inspired name
-3. **Mythological Story**: Create a brief, story about this constellation (2-3 sentences)
-4. **Key Stars**: Identify the brightest stars and what they represent in your story
-5. **Special Features**: Note any unique patterns or clusters that make this constellation special
+NAME: <a creative 2-4 word constellation name>
+STORY: <a short myth in the style of ancient legend, 2-3 sentences, poetic and evocative>
 
-Be imaginative and poetic - every drawing tells a celestial story!
-`
+Do not include any other text.`
 
-    // Prepare both analysis inputs
-    const identificationInput = {
-      image: [...imageBuffer],
-      prompt: identificationPrompt,
-    };
-    
-    // Second analysis - describe the drawing pattern for visualization
-    const detailPrompt = `Describe this drawing's star pattern in detail for creating a beautiful night sky scene:
+    const detailPrompt = `Describe this drawing's star pattern for a night-sky illustration: where the main stars sit, how they connect, the overall shape and flow. Keep it short.`
 
-- Where are the main stars/points located (upper, middle, lower regions)?
-- How are they connected (straight lines, curves, clusters)?
-- What's the overall shape and flow of the pattern?
-- Which areas should have bright stars vs dim ones?
-- Any special features like star clusters or empty spaces?
-
-Focus on the actual drawing pattern, not interpretation.`
-
-    const detailInput = {
-      image: [...imageBuffer],
-      prompt: detailPrompt,
-    };
-    
-    // Run all three AI calls in parallel for maximum speed
     const [identificationResponse, detailResponse] = await Promise.all([
-      c.env.AI.run(
-        "@cf/llava-hf/llava-1.5-7b-hf",
-        identificationInput
-      ),
-      c.env.AI.run(
-        "@cf/llava-hf/llava-1.5-7b-hf",
-        detailInput
-      )
-    ]);
+      c.env.AI.run('@cf/llava-hf/llava-1.5-7b-hf', {
+        image: [...imageBuffer],
+        prompt: identificationPrompt,
+      }),
+      c.env.AI.run('@cf/llava-hf/llava-1.5-7b-hf', {
+        image: [...imageBuffer],
+        prompt: detailPrompt,
+      }),
+    ])
 
-    // Extract the description text from the response
-    let detailedDescription = '';
-    if (typeof detailResponse === 'object' && detailResponse.description) {
-      detailedDescription = detailResponse.description;
-    } else if (typeof detailResponse === 'string') {
-      detailedDescription = detailResponse;
-    } else {
-      detailedDescription = 'A constellation pattern drawn in the night sky with bright stars connected by faint lines';
-    }
+    const identificationText = extractText(identificationResponse)
+    const { name, story } = parseNameAndStory(identificationText)
+    const detailedDescription = extractText(detailResponse) ||
+      'A constellation pattern drawn in the night sky with bright stars connected by faint lines'
 
-    // Randomly select creative background elements for variety
     const backgroundStyles = [
       'aurora borealis green and purple dancing lights',
       'deep purple and pink nebula clouds swirling',
@@ -283,48 +337,32 @@ Focus on the actual drawing pattern, not interpretation.`
       'rose gold dawn sky with morning stars',
       'indigo midnight with silver moonlight',
       'emerald and sapphire cosmic ocean',
-      'crimson and gold stellar nursery'
-    ];
-    
+      'crimson and gold stellar nursery',
+    ]
     const atmosphericEffects = [
       'ethereal mist and star fog',
       'shimmering stardust particles',
       'flowing cosmic rivers of light',
       'crystalline ice clouds catching starlight',
       'bioluminescent space clouds',
-      'prismatic light refractions'
-    ];
-    
-    const randomBackground = backgroundStyles[Math.floor(Math.random() * backgroundStyles.length)];
-    const randomEffect = atmosphericEffects[Math.floor(Math.random() * atmosphericEffects.length)];
-    
-    // Generate sky view image with creative and varied backgrounds
-    const imageGenerationPrompt = `Magical constellation art: Transform "${identificationResponse}" into a stunning constellation pattern. ${detailedDescription}. Background: ${randomBackground}. Atmosphere: ${randomEffect}. Bright twinkling stars connected by faint ethereal lines forming the shape, ${randomBackground}, dreamy and fantastical, highly artistic, varied and creative color palette, NOT plain blue sky, masterpiece quality`;
+      'prismatic light refractions',
+    ]
+    const randomBackground = backgroundStyles[Math.floor(Math.random() * backgroundStyles.length)]
+    const randomEffect = atmosphericEffects[Math.floor(Math.random() * atmosphericEffects.length)]
 
-    const imageGenerationInput = {
-      prompt: imageGenerationPrompt,
-    };
+    const imageGenerationPrompt = `Magical constellation art: "${name}". ${detailedDescription}. Background: ${randomBackground}. Atmosphere: ${randomEffect}. Bright twinkling stars connected by faint ethereal lines forming the shape, dreamy and fantastical, varied and creative color palette, masterpiece quality`
 
-    // Start image generation (but don't wait for it if we want to return faster)
-    const skyViewPromise = c.env.AI.run(
-      "@cf/leonardo/lucid-origin" as any,
-      imageGenerationInput
-    );
+    const skyViewResponse = await c.env.AI.run(
+      '@cf/leonardo/lucid-origin' as never,
+      { prompt: imageGenerationPrompt } as never,
+    )
 
-    // We can return the identification immediately and let the image generate
-    const skyViewResponse = await skyViewPromise;
-
-    // Store the analysis
-    await c.env.DRAWINGS_KV.put(`analysis_${Date.now()}`, JSON.stringify({
-      identification: identificationResponse,
+    return c.json({
+      name,
+      story,
+      result: identificationText,
       skyView: skyViewResponse,
-      timestamp: Date.now()
-    }), { expirationTtl: 86400 })
-
-    return c.json({ 
-      result: identificationResponse,
-      skyView: skyViewResponse,
-      backgroundStyle: randomBackground 
+      backgroundStyle: randomBackground,
     })
   } catch (error) {
     console.error('Analysis error:', error)
@@ -332,15 +370,75 @@ Focus on the actual drawing pattern, not interpretation.`
   }
 })
 
+app.post('/api/constellation', async (c) => {
+  try {
+    const body = await c.req.json<{
+      roomId: string
+      name: string
+      story?: string
+      author?: string
+      image?: string
+    }>()
+
+    const name = (body.name || '').trim().slice(0, 60)
+    if (!name) return c.json({ error: 'Name required' }, 400)
+
+    const id = crypto.randomUUID()
+    const story = (body.story || '').trim().slice(0, 2000)
+    const author = (body.author || '').trim().slice(0, 24) || 'Anonymous'
+    const hasImage = body.image ? 1 : 0
+
+    await c.env.DB.prepare(`
+      INSERT INTO constellations (id, room_id, name, story, author, has_image)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(id, body.roomId || 'unknown', name, story, author, hasImage).run()
+
+    if (body.image) {
+      await c.env.DRAWINGS_KV.put(`constellation_image_${id}`, body.image)
+    }
+
+    return c.json({ id, name, story, author })
+  } catch (error) {
+    console.error('Save error:', error)
+    return c.json({ error: 'Failed to save constellation' }, 500)
+  }
+})
+
+app.get('/api/gallery', async (c) => {
+  try {
+    const limit = Math.min(Number(c.req.query('limit') || 48), 100)
+    const result = await c.env.DB.prepare(`
+      SELECT id, name, story, author, has_image, created_at
+      FROM constellations
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).bind(limit).all()
+
+    return c.json({ items: result.results ?? [] })
+  } catch (error) {
+    console.error('Gallery error:', error)
+    return c.json({ error: 'Failed to fetch gallery' }, 500)
+  }
+})
+
+app.get('/api/gallery/:id/image', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const image = await c.env.DRAWINGS_KV.get(`constellation_image_${id}`)
+    if (!image) return c.json({ error: 'Not found' }, 404)
+    return c.json({ image })
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch image' }, 500)
+  }
+})
+
 app.post('/api/session', async (c) => {
   try {
     const { roomId, userId } = await c.req.json()
-    
     await c.env.DB.prepare(`
       INSERT INTO sessions (room_id, user_id, created_at)
       VALUES (?, ?, datetime('now'))
     `).bind(roomId, userId).run()
-
     return c.json({ success: true })
   } catch (error) {
     return c.json({ error: 'Failed to create session' }, 500)
@@ -355,23 +453,17 @@ app.get('/api/stats', async (c) => {
       FROM sessions
       WHERE created_at > datetime('now', '-24 hours')
     `).first()
-
     return c.json({
       totalSessions: result?.total_sessions || 0,
       uniqueRooms: result?.unique_rooms || 0,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     })
   } catch (error) {
     return c.json({ error: 'Failed to fetch stats' }, 500)
   }
 })
 
-app.get('/', async (c) => {
-  return c.env.ASSETS.fetch(c.req.raw)
-})
-
-app.get('/*', async (c) => {
-  return c.env.ASSETS.fetch(c.req.raw)
-})
+app.get('/', async (c) => c.env.ASSETS.fetch(c.req.raw))
+app.get('/*', async (c) => c.env.ASSETS.fetch(c.req.raw))
 
 export default app
