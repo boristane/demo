@@ -116,3 +116,7 @@ MIT License - feel free to use this project for your own hackathon submissions!
 ## =O Acknowledgments
 
 Built with d for the NASA International SpaceApps Challenge 2025
+
+---
+
+*Last updated: 2026-04-17*
