@@ -19,8 +19,14 @@
             <div class="participants-list" style="font-size: 14px; margin-top: 4px">Draw together and watch AI transform it into a unique constellation</div>
           </div>
             <div class="room-info">
-                <span class="room-label">Room:</span>
-                <span class="room-id" id="roomId"></span>
+                <div class="room-name-display" id="roomNameDisplay" style="display: none;">
+                    <span class="room-name" id="roomName"></span>
+                    <span class="room-id-small" style="font-size: 12px; opacity: 0.7; margin-left: 8px;">(<span id="roomIdSmall"></span>)</span>
+                </div>
+                <div class="room-id-display" id="roomIdDisplay">
+                    <span class="room-label">Room:</span>
+                    <span class="room-id" id="roomId"></span>
+                </div>
                 <button class="copy-btn" id="copyBtn" title="Copy room link">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -74,8 +80,13 @@
     <div class="modal" id="nameModal">
         <div class="modal-content" style="max-width: 400px;">
             <h2>Welcome!</h2>
-            <p>Please enter your name to join the drawing room:</p>
+            <p>Please enter your details to join the drawing room:</p>
             <input type="text" id="nameInput" placeholder="Your name" maxlength="20" autofocus>
+            <div id="roomNameSection" style="margin-top: 15px; display: none;">
+                <p style="margin-bottom: 8px; font-size: 14px;">Give your room a name (optional):</p>
+                <input type="text" id="roomNameInput" placeholder="Room name (e.g., Space Artists)" maxlength="50">
+                <small style="display: block; margin-top: 5px; color: #666;">Letters, numbers, spaces, hyphens, and underscores only</small>
+            </div>
             <button class="btn btn-primary" id="joinBtn">Join Room</button>
         </div>
     </div>

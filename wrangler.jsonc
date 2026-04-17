@@ -46,7 +46,13 @@
       "id": "4562dcfdd36a4ff5a0cdc2884dfd6283"
     }
   ],
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS_ENGINE_METRICS_DATASET",
+      "dataset": "prod_metrics_dataset"
+    }
+  ],
   "vars": {
-    "STAGE": "production"
+    "STAGE": "development"
   }
 }

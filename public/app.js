@@ -7,6 +7,8 @@ class DrawingApp {
         this.userName = null
         this.userColor = null
         this.roomId = this.getRoomId()
+        this.roomName = null
+        this.isNewRoom = false
         this.participants = new Map()
         this.lines = []
         
@@ -25,6 +27,7 @@ class DrawingApp {
             roomId = Math.random().toString(36).substring(2, 8)
             const newUrl = `${window.location.pathname}?room=${roomId}`
             window.history.replaceState({}, '', newUrl)
+            this.isNewRoom = true
         }
         
         return roomId
@@ -34,6 +37,7 @@ class DrawingApp {
         this.setupCanvas()
         this.setupEventListeners()
         this.updateRoomInfo()
+        this.loadRoomName()
         this.showNameModal()
     }
 
@@ -87,7 +91,7 @@ class DrawingApp {
             const name = nameInput.value.trim()
             if (name) {
                 this.userName = name
-                this.joinRoom()
+                this.handleJoinRoom()
             }
         })
         
@@ -96,7 +100,7 @@ class DrawingApp {
                 const name = nameInput.value.trim()
                 if (name) {
                     this.userName = name
-                    this.joinRoom()
+                    this.handleJoinRoom()
                 }
             }
         })
@@ -204,6 +208,10 @@ class DrawingApp {
     }
 
     showNameModal() {
+        // Show room name input only for new rooms
+        if (this.isNewRoom) {
+            document.getElementById('roomNameSection').style.display = 'block'
+        }
         document.getElementById('nameModal').classList.add('show')
         document.getElementById('nameInput').focus()
     }
@@ -212,9 +220,80 @@ class DrawingApp {
         document.getElementById('nameModal').classList.remove('show')
     }
 
+    async handleJoinRoom() {
+        // Handle room name if it's a new room
+        if (this.isNewRoom) {
+            const roomNameInput = document.getElementById('roomNameInput')
+            const roomName = roomNameInput.value.trim()
+            
+            if (roomName) {
+                // Validate room name
+                if (roomName.length > 50) {
+                    this.showNotification('Room name too long (max 50 characters)')
+                    return
+                }
+                
+                if (!/^[a-zA-Z0-9\s\-_]+$/.test(roomName)) {
+                    this.showNotification('Room name contains invalid characters')
+                    return
+                }
+                
+                // Save room name
+                await this.saveRoomName(roomName)
+            }
+        }
+        
+        this.joinRoom()
+    }
+    
     joinRoom() {
         this.hideNameModal()
         this.connectWebSocket()
+    }
+    
+    async saveRoomName(name) {
+        try {
+            const response = await fetch(`/api/room/${this.roomId}/name`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name })
+            })
+            
+            if (response.ok) {
+                const data = await response.json()
+                this.roomName = data.name
+                this.displayRoomName()
+            }
+        } catch (error) {
+            console.error('Error saving room name:', error)
+        }
+    }
+    
+    async loadRoomName() {
+        try {
+            const response = await fetch(`/api/room/${this.roomId}/name`)
+            
+            if (response.ok) {
+                const data = await response.json()
+                if (data.name) {
+                    this.roomName = data.name
+                    this.displayRoomName()
+                }
+            }
+        } catch (error) {
+            console.error('Error loading room name:', error)
+        }
+    }
+    
+    displayRoomName() {
+        if (this.roomName) {
+            document.getElementById('roomName').textContent = this.roomName
+            document.getElementById('roomIdSmall').textContent = this.roomId
+            document.getElementById('roomNameDisplay').style.display = 'flex'
+            document.getElementById('roomIdDisplay').style.display = 'none'
+        }
     }
 
     connectWebSocket() {
@@ -254,6 +333,10 @@ class DrawingApp {
                 this.userColor = message.color
                 this.participants = new Map(message.participants)
                 this.lines = message.lines || []
+                if (message.roomName && !this.roomName) {
+                    this.roomName = message.roomName
+                    this.displayRoomName()
+                }
                 this.updateParticipantsList()
                 this.redrawCanvas()
                 break
