@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constellation Battles</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="extras.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div>
+                <h1 class="title">Constellation Battles</h1>
+                <div class="participants-list" style="font-size: 14px; margin-top: 4px">AI-judged drawing challenges. Pick a battle, draw the prompt, submit for scoring.</div>
+            </div>
+            <nav class="top-nav">
+                <a href="/" class="nav-link">Draw</a>
+                <a href="/gallery.html" class="nav-link">Gallery</a>
+                <a href="/battle.html" class="nav-link active">Battles</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="battle-main">
+        <section class="battle-section">
+            <div class="section-header">
+                <h2>Start a new battle</h2>
+            </div>
+            <div class="battle-create">
+                <input type="text" id="promptInput" placeholder="Leave blank for an AI-picked prompt, or type your own" maxlength="160">
+                <select id="durationSelect">
+                    <option value="60">1 min</option>
+                    <option value="120">2 min</option>
+                    <option value="180" selected>3 min</option>
+                    <option value="300">5 min</option>
+                    <option value="600">10 min</option>
+                </select>
+                <button class="btn btn-primary" id="createBattleBtn">Create Battle</button>
+            </div>
+        </section>
+
+        <section class="battle-section">
+            <div class="section-header">
+                <h2>Active & Recent Battles</h2>
+                <button class="btn btn-stop" id="refreshBtn">Refresh</button>
+            </div>
+            <div class="battle-list" id="battleList"></div>
+            <div class="battle-empty" id="battleEmpty" style="display: none;">No battles yet. Create one to get started.</div>
+        </section>
+
+        <section class="battle-section">
+            <div class="section-header">
+                <h2>Global Leaderboard</h2>
+            </div>
+            <table class="leaderboard-table" id="leaderboardTable">
+                <thead>
+                    <tr>
+                        <th>Team</th>
+                        <th>Wins</th>
+                        <th>Battles</th>
+                        <th>Avg Score</th>
+                        <th>Best</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody"></tbody>
+            </table>
+            <div class="battle-empty" id="leaderboardEmpty" style="display: none;">No scores recorded yet.</div>
+        </section>
+    </main>
+
+    <div class="modal" id="battleModal">
+        <div class="modal-content modal-content-large">
+            <button class="modal-close" id="battleClose">&times;</button>
+            <h2 id="battleModalTitle"></h2>
+            <p class="battle-modal-prompt" id="battleModalPrompt"></p>
+            <p class="battle-modal-meta" id="battleModalMeta"></p>
+            <div class="battle-actions">
+                <button class="btn btn-primary" id="joinDrawBtn">Draw in a new room</button>
+            </div>
+            <h3 class="battle-entries-heading">Entries</h3>
+            <div class="battle-entries" id="battleEntries"></div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script src="battle.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constellation Gallery</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="extras.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div>
+                <h1 class="title">Constellation Gallery</h1>
+                <div class="participants-list" style="font-size: 14px; margin-top: 4px">Browse constellations drawn by others</div>
+            </div>
+            <nav class="top-nav">
+                <a href="/" class="nav-link">Draw</a>
+                <a href="/gallery.html" class="nav-link active">Gallery</a>
+                <a href="/battle.html" class="nav-link">Battles</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="controls-bar">
+        <div class="sort-tabs">
+            <button class="sort-tab active" data-sort="new">Newest</button>
+            <button class="sort-tab" data-sort="top">Most Liked</button>
+        </div>
+    </div>
+
+    <main class="gallery-main">
+        <div class="gallery-grid" id="galleryGrid"></div>
+        <div class="gallery-empty" id="galleryEmpty" style="display: none;">
+            No constellations saved yet. <a href="/">Draw one</a> and add it to the gallery.
+        </div>
+        <button class="btn btn-primary gallery-load-more" id="loadMoreBtn" style="display: none;">Load more</button>
+    </main>
+
+    <div class="modal" id="detailModal">
+        <div class="modal-content modal-content-large">
+            <button class="modal-close" id="detailClose">&times;</button>
+            <div class="detail-layout">
+                <div class="detail-image-wrap">
+                    <img id="detailImage" alt="Sky view">
+                    <canvas id="replayCanvas" class="replay-canvas"></canvas>
+                </div>
+                <div class="detail-info">
+                    <h2 id="detailTitle"></h2>
+                    <p class="detail-meta" id="detailMeta"></p>
+                    <p class="detail-story" id="detailStory"></p>
+                    <div class="detail-actions">
+                        <button class="btn btn-like" id="likeBtn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                            </svg>
+                            <span id="likeCount">0</span>
+                        </button>
+                        <button class="btn btn-primary" id="replayBtn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            Replay Drawing
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script src="gallery.js"></script>
+</body>
+</html>

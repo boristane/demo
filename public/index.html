@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Collaborative Constellation - NASA SpaceApps 2025</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="extras.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -18,6 +19,11 @@
             </h1>
             <div class="participants-list" style="font-size: 14px; margin-top: 4px">Draw together and watch AI transform it into a unique constellation</div>
           </div>
+            <nav class="top-nav">
+                <a href="/" class="nav-link active">Draw</a>
+                <a href="/gallery.html" class="nav-link">Gallery</a>
+                <a href="/battle.html" class="nav-link">Battles</a>
+            </nav>
             <div class="room-info">
                 <span class="room-label">Room:</span>
                 <span class="room-id" id="roomId"></span>
@@ -31,6 +37,15 @@
         </div>
     </header>
 
+    <div class="battle-banner" id="battleBanner" style="display: none;">
+        <div class="battle-banner-prompt">
+            <strong>Battle Prompt:</strong>
+            <span id="battlePromptText"></span>
+        </div>
+        <div class="battle-banner-timer" id="battleTimer">--:--</div>
+        <button class="btn btn-battle-submit" id="submitBattleBtn">Submit Entry</button>
+    </div>
+
     <div class="controls-bar">
         <button class="btn btn-clear" id="clearBtn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -40,7 +55,7 @@
             </svg>
             <span class="btn-text">Clear</span>
         </button>
-        
+
         <button class="btn btn-analyze" id="analyzeBtn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
                 <circle cx="11" cy="11" r="8"></circle>
@@ -88,6 +103,11 @@
                 <img id="skyViewImage" src="" alt="Sky view of constellation" style="display: none;">
                 <div class="sky-view-loading" id="skyViewLoading">Generating sky view...</div>
             </div>
+            <div class="story-block" id="storyBlock" style="display: none;"></div>
+            <div class="save-gallery-row" id="saveGalleryRow" style="display: none;">
+                <input type="text" id="galleryTitleInput" placeholder="Title for the gallery..." maxlength="100">
+                <button class="btn btn-gallery" id="saveGalleryBtn">Save to Gallery</button>
+            </div>
             <div class="modal-actions">
                 <button class="btn btn-download" id="downloadBtn" style="display: none;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -98,6 +118,20 @@
                     Download Image
                 </button>
                 <button class="btn btn-primary" id="closeResultsBtn">Continue Drawing</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="battleResultModal">
+        <div class="modal-content" style="max-width: 480px;">
+            <button class="modal-close" id="battleResultClose">&times;</button>
+            <h2>Battle Entry Submitted</h2>
+            <p class="battle-score-label">AI Score</p>
+            <div class="battle-score-big" id="battleScoreBig">--</div>
+            <p class="battle-score-label">Feedback</p>
+            <div class="story-block" id="battleFeedbackBlock"></div>
+            <div class="modal-actions">
+                <a class="btn btn-primary" id="viewBattleLink" href="/battle.html">View Battle</a>
             </div>
         </div>
     </div>
