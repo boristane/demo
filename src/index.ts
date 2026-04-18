@@ -314,17 +314,19 @@ Focus on the actual drawing pattern, not interpretation.`
     // We can return the identification immediately and let the image generate
     const skyViewResponse = await skyViewPromise;
 
-    // Store the analysis
-    await c.env.DRAWINGS_KV.put(`analysis_${Date.now()}`, JSON.stringify({
+    const shareId = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
+    await c.env.DRAWINGS_KV.put(`constellation:${shareId}`, JSON.stringify({
       identification: identificationResponse,
       skyView: skyViewResponse,
+      backgroundStyle: randomBackground,
       timestamp: Date.now()
-    }), { expirationTtl: 86400 })
+    }), { expirationTtl: 60 * 60 * 24 * 30 })
 
-    return c.json({ 
+    return c.json({
       result: identificationResponse,
       skyView: skyViewResponse,
-      backgroundStyle: randomBackground 
+      backgroundStyle: randomBackground,
+      shareId
     })
   } catch (error) {
     console.error('Analysis error:', error)
@@ -364,6 +366,108 @@ app.get('/api/stats', async (c) => {
   } catch (error) {
     return c.json({ error: 'Failed to fetch stats' }, 500)
   }
+})
+
+function extractText(value: unknown): string {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') {
+    const v = value as Record<string, unknown>
+    return (
+      (typeof v.response === 'string' && v.response) ||
+      (typeof v.description === 'string' && v.description) ||
+      (typeof v.text === 'string' && v.text) ||
+      (Object.values(v).find((x) => typeof x === 'string') as string) ||
+      ''
+    )
+  }
+  return ''
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+app.get('/api/constellation/:id/image', async (c) => {
+  const id = c.req.param('id')
+  const raw = await c.env.DRAWINGS_KV.get(`constellation:${id}`)
+  if (!raw) return c.notFound()
+
+  const data = JSON.parse(raw)
+  const base64 = data?.skyView?.image
+  if (!base64) return c.notFound()
+
+  const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0))
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=604800, immutable',
+    },
+  })
+})
+
+app.get('/c/:id', async (c) => {
+  const id = c.req.param('id')
+  const raw = await c.env.DRAWINGS_KV.get(`constellation:${id}`)
+  if (!raw) {
+    return c.html('<!doctype html><meta charset="utf-8"><title>Constellation not found</title><p>This constellation has drifted out of view.</p>', 404)
+  }
+
+  const data = JSON.parse(raw)
+  const story = extractText(data.identification) || 'A constellation drawn collaboratively.'
+  const url = new URL(c.req.url)
+  const shareUrl = `${url.origin}/c/${id}`
+  const imageUrl = `${url.origin}/api/constellation/${id}/image`
+  const title = 'A Collaborative Constellation'
+  const description = story.length > 200 ? story.slice(0, 197) + '...' : story
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<meta name="description" content="${escapeHtml(description)}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="${escapeHtml(description)}">
+<meta property="og:image" content="${escapeHtml(imageUrl)}">
+<meta property="og:url" content="${escapeHtml(shareUrl)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(title)}">
+<meta name="twitter:description" content="${escapeHtml(description)}">
+<meta name="twitter:image" content="${escapeHtml(imageUrl)}">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; font-family: 'Inter', -apple-system, sans-serif; background: #0b0d1a; color: #e9ecef; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem; }
+.card { max-width: 720px; width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+.card img { width: 100%; border-radius: 12px; display: block; }
+h1 { font-size: 1.4rem; margin: 1.25rem 0 0.5rem; font-weight: 600; }
+p { line-height: 1.6; color: #c8cad1; margin: 0 0 1rem; white-space: pre-wrap; }
+.cta { display: inline-block; margin-top: 0.5rem; padding: 0.7rem 1.2rem; background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; border-radius: 999px; text-decoration: none; font-weight: 600; }
+.cta:hover { filter: brightness(1.1); }
+.foot { margin-top: 1rem; color: #8a8fa3; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="card">
+<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}">
+<h1>${escapeHtml(title)}</h1>
+<p>${escapeHtml(story)}</p>
+<a class="cta" href="/">Draw your own</a>
+<div class="foot">Created with Collaborative Constellation</div>
+</div>
+</body>
+</html>`
+
+  return c.html(html, 200, {
+    'Cache-Control': 'public, max-age=3600',
+  })
 })
 
 app.get('/', async (c) => {

@@ -374,7 +374,7 @@ class DrawingApp {
                 }
                 
                 // Show modal with results and sky view
-                this.showResultsModal(analysisText, result.skyView)
+                this.showResultsModal(analysisText, result.skyView, result.shareId)
                 
                 // Broadcast to other users (without the image to save bandwidth)
                 if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -399,19 +399,21 @@ class DrawingApp {
         }
     }
     
-    showResultsModal(text, skyView = null) {
+    showResultsModal(text, skyView = null, shareId = null) {
         const modal = document.getElementById('resultsModal')
         const skyViewImage = document.getElementById('skyViewImage')
         const skyViewLoading = document.getElementById('skyViewLoading')
         const downloadBtn = document.getElementById('downloadBtn')
-        
-        
+        const shareBtn = document.getElementById('shareBtn')
+
+        shareBtn.style.display = 'none'
+
         // Handle sky view image if present
         if (skyView) {
             skyViewLoading.style.display = 'block'
             skyViewImage.style.display = 'none'
             downloadBtn.style.display = 'none'
-            
+
             // The skyView response should contain image data
             if (skyView.image) {
                 // Convert the image data to base64 if needed
@@ -421,10 +423,15 @@ class DrawingApp {
                     skyViewLoading.style.display = 'none'
                     skyViewImage.style.display = 'block'
                     downloadBtn.style.display = 'inline-flex'
-                    
+
                     // Setup download functionality
                     downloadBtn.onclick = () => {
                         this.downloadImage(skyViewImage.src)
+                    }
+
+                    if (shareId) {
+                        shareBtn.style.display = 'inline-flex'
+                        shareBtn.onclick = () => this.shareConstellation(shareId, text)
                     }
                 }
                 skyViewImage.onerror = () => {
@@ -501,6 +508,31 @@ class DrawingApp {
         }).catch(() => {
             this.showNotification('Failed to copy link')
         })
+    }
+
+    async shareConstellation(shareId, story) {
+        const shareUrl = `${window.location.origin}/c/${shareId}`
+        const shareData = {
+            title: 'A Collaborative Constellation',
+            text: story ? story.slice(0, 180) : 'Check out the constellation we drew together!',
+            url: shareUrl
+        }
+
+        if (navigator.share) {
+            try {
+                await navigator.share(shareData)
+                return
+            } catch (err) {
+                if (err && err.name === 'AbortError') return
+            }
+        }
+
+        try {
+            await navigator.clipboard.writeText(shareUrl)
+            this.showNotification('Share link copied!')
+        } catch {
+            window.prompt('Copy this link to share:', shareUrl)
+        }
     }
 
     downloadImage(dataUrl) {
