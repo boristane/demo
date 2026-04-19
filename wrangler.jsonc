@@ -5,7 +5,7 @@
   "workers_dev": true,
   "upload_source_maps": true,
   "observability": {
-    "enabled": false
+    "enabled": true
   },
   "compatibility_flags": [
     "nodejs_compat"

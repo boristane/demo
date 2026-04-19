@@ -16,6 +16,12 @@ export interface Env {
   ASSETS: Fetcher
   SNAPSHOTS: R2Bucket
   UPLOADS: R2Bucket
+  // Environment variables for secrets
+  JWT_SECRET: string
+  ADMIN_TOKEN: string
+  ADMIN_API_KEY: string
+  SERVICE_API_KEY: string
+  PARTNER_API_KEY: string
 }
 
 interface DrawingMessage {
@@ -199,7 +205,7 @@ export class DrawingRoom {
 const app = new Hono<{ Bindings: Env }>()
 
 app.use('/*', cors({
-  origin: '*',
+  origin: ['https://yourdomain.com', 'https://app.yourdomain.com', 'http://localhost:3000', 'http://localhost:5173'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,

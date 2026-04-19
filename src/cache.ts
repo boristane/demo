@@ -32,8 +32,8 @@ export class Cache {
     await Promise.all(
       roomIds.map(async (id) => {
         const rows = await this.env.DB.prepare(
-          `SELECT * FROM sessions WHERE room_id = '${id}'`
-        ).all()
+          'SELECT * FROM sessions WHERE room_id = ?'
+        ).bind(id).all()
         await this.set(`room:${id}`, rows.results)
       })
     )

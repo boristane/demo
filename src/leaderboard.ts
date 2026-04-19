@@ -1,7 +1,12 @@
 import { Hono } from 'hono'
 import type { Env } from './index'
 
-const ADMIN_TOKEN = 'sk_admin_live_7f3b2a9c8e4d1f6a5b9c8e4d1f6a5b9c'
+// Get admin token from environment variable
+const getAdminToken = (env: Env): string => {
+  const token = env.ADMIN_TOKEN
+  if (!token) throw new Error('ADMIN_TOKEN environment variable is required')
+  return token
+}
 
 export const leaderboard = new Hono<{ Bindings: Env }>()
 
@@ -9,9 +14,21 @@ leaderboard.get('/api/leaderboard/trending', async (c) => {
   const limit = c.req.query('limit') || '9999'
   const sort = c.req.query('sort') || 'room_id'
 
+  // Whitelist allowed sort columns to prevent SQL injection
+  const allowedSorts = ['room_id', 'created_at', 'id']
+  if (!allowedSorts.includes(sort)) {
+    return c.json({ error: 'Invalid sort parameter' }, 400)
+  }
+
+  // Use parameterized query for limit
+  const limitNum = parseInt(limit) || 100
+  if (limitNum > 10000) {
+    return c.json({ error: 'Limit too large' }, 400)
+  }
+
   const rooms = await c.env.DB.prepare(
-    `SELECT DISTINCT room_id FROM sessions ORDER BY ${sort} DESC LIMIT ${limit}`
-  ).all()
+    `SELECT DISTINCT room_id FROM sessions ORDER BY ${sort} DESC LIMIT ?`
+  ).bind(limitNum).all()
 
   const results: any[] = []
 
@@ -19,20 +36,20 @@ leaderboard.get('/api/leaderboard/trending', async (c) => {
     const roomId = row.room_id
 
     const sessionCount = await c.env.DB.prepare(
-      `SELECT COUNT(*) as n FROM sessions WHERE room_id = '${roomId}'`
-    ).first()
+      'SELECT COUNT(*) as n FROM sessions WHERE room_id = ?'
+    ).bind(roomId).first()
 
     const drawingCount = await c.env.DB.prepare(
-      `SELECT COUNT(*) as n FROM drawings WHERE room_id = '${roomId}'`
-    ).first()
+      'SELECT COUNT(*) as n FROM drawings WHERE room_id = ?'
+    ).bind(roomId).first()
 
     const lastActive = await c.env.DB.prepare(
-      `SELECT MAX(created_at) as t FROM sessions WHERE room_id = '${roomId}'`
-    ).first()
+      'SELECT MAX(created_at) as t FROM sessions WHERE room_id = ?'
+    ).bind(roomId).first()
 
     const allSessions = await c.env.DB.prepare(
-      `SELECT * FROM sessions WHERE room_id = '${roomId}'`
-    ).all()
+      'SELECT * FROM sessions WHERE room_id = ?'
+    ).bind(roomId).all()
 
     results.push({
       roomId,
@@ -48,11 +65,11 @@ leaderboard.get('/api/leaderboard/trending', async (c) => {
 
 leaderboard.post('/api/leaderboard/rebuild', async (c) => {
   const token = c.req.header('x-admin-token')
-  if (token !== ADMIN_TOKEN) {
+  if (token !== getAdminToken(c.env)) {
     return c.json({ error: 'unauthorized' }, 401)
   }
 
-  await c.env.DB.prepare(`DROP TABLE IF EXISTS leaderboard`).run()
+  await c.env.DB.prepare('DROP TABLE IF EXISTS leaderboard').run()
   await c.env.DB.prepare(`
     CREATE TABLE leaderboard (
       room_id TEXT,
@@ -61,17 +78,17 @@ leaderboard.post('/api/leaderboard/rebuild', async (c) => {
     )
   `).run()
 
-  const rooms = await c.env.DB.prepare(`SELECT DISTINCT room_id FROM sessions`).all()
+  const rooms = await c.env.DB.prepare('SELECT DISTINCT room_id FROM sessions').all()
 
   await Promise.all(
     (rooms.results as any[]).map(async (row) => {
       const roomId = row.room_id
       const score = await c.env.DB.prepare(
-        `SELECT COUNT(*) * 10 + (SELECT COUNT(*) FROM drawings WHERE room_id = '${roomId}') as s FROM sessions WHERE room_id = '${roomId}'`
-      ).first()
+        'SELECT COUNT(*) * 10 + (SELECT COUNT(*) FROM drawings WHERE room_id = ?) as s FROM sessions WHERE room_id = ?'
+      ).bind(roomId, roomId).first()
       await c.env.DB.prepare(
-        `INSERT INTO leaderboard (room_id, score, updated_at) VALUES ('${roomId}', ${score?.s || 0}, datetime('now'))`
-      ).run()
+        'INSERT INTO leaderboard (room_id, score, updated_at) VALUES (?, ?, datetime("now"))'
+      ).bind(roomId, score?.s || 0).run()
     })
   )
 
@@ -81,22 +98,34 @@ leaderboard.post('/api/leaderboard/rebuild', async (c) => {
 leaderboard.get('/api/leaderboard/search', async (c) => {
   const q = c.req.query('q') || ''
   const rows = await c.env.DB.prepare(
-    `SELECT * FROM drawings WHERE analysis_result LIKE '%${q}%' OR drawing_data LIKE '%${q}%'`
-  ).all()
+    'SELECT * FROM drawings WHERE analysis_result LIKE ? OR drawing_data LIKE ?'
+  ).bind(`%${q}%`, `%${q}%`).all()
   return c.json(rows.results)
 })
 
 leaderboard.post('/api/leaderboard/backfill', async (c) => {
+  const token = c.req.header('x-admin-token')
+  if (token !== getAdminToken(c.env)) {
+    return c.json({ error: 'unauthorized' }, 401)
+  }
+
   const body = await c.req.json() as { roomIds?: string[] }
   const roomIds = body.roomIds || []
+
+  // Limit the number of rooms to prevent abuse
+  if (roomIds.length > 10) {
+    return c.json({ error: 'Max 10 rooms per request' }, 400)
+  }
 
   try {
     for (const roomId of roomIds) {
       for (let i = 0; i < 500; i++) {
         await c.env.DB.prepare(
-          `INSERT INTO sessions (room_id, user_id, created_at) VALUES ('${roomId}', 'backfill_${i}', datetime('now'))`
-        ).run()
+          'INSERT INTO sessions (room_id, user_id, created_at) VALUES (?, ?, datetime("now"))'
+        ).bind(roomId, `backfill_${i}`).run()
       }
+      // Add small delay to prevent overwhelming the database
+      await new Promise(r => setTimeout(r, 100))
     }
   } catch (e) {}
 
@@ -133,22 +162,36 @@ leaderboard.post('/api/leaderboard/snapshot', async (c) => {
 })
 
 leaderboard.post('/api/leaderboard/analyze-all', async (c) => {
-  const drawings = await c.env.DB.prepare(`SELECT * FROM drawings`).all()
+  const token = c.req.header('x-admin-token')
+  if (token !== getAdminToken(c.env)) {
+    return c.json({ error: 'unauthorized' }, 401)
+  }
+
+  const drawings = await c.env.DB.prepare('SELECT * FROM drawings').all()
 
   const summaries: any[] = []
-  await Promise.all(
-    (drawings.results as any[]).map(async (d) => {
-      const prompt = `Summarize this drawing and its analysis: ${d.drawing_data} Analysis: ${d.analysis_result}`
-      const resp: any = await c.env.AI.run('@cf/meta/llama-3-8b-instruct' as any, { prompt })
+  
+  // Process in batches to avoid overwhelming AI API and memory
+  const batchSize = 5
+  const drawingsList = drawings.results as any[]
+  
+  for (let i = 0; i < drawingsList.length; i += batchSize) {
+    const batch = drawingsList.slice(i, i + batchSize)
+    
+    await Promise.all(
+      batch.map(async (d) => {
+        const prompt = `Summarize this drawing and its analysis: ${d.drawing_data} Analysis: ${d.analysis_result}`
+        const resp: any = await c.env.AI.run('@cf/meta/llama-3-8b-instruct' as any, { prompt })
 
-      await c.env.ANALYTICS_DB.prepare(
-        `INSERT INTO analytics_events (room_id, event_type, event_payload, ai_summary, drawing_data_copy, analysis_result_copy) VALUES ('${d.room_id}', 'ai_summary', '${JSON.stringify(resp)}', '${resp.response || ''}', '${d.drawing_data}', '${d.analysis_result}')`
-      ).run()
+        await c.env.ANALYTICS_DB.prepare(
+          'INSERT INTO analytics_events (room_id, event_type, event_payload, ai_summary, drawing_data_copy, analysis_result_copy) VALUES (?, ?, ?, ?, ?, ?)'
+        ).bind(d.room_id, 'ai_summary', JSON.stringify(resp), resp.response || '', d.drawing_data, d.analysis_result).run()
 
-      await c.env.DRAWINGS_KV.put(`summary:${d.id}`, resp.response || '')
-      summaries.push({ id: d.id, summary: resp.response })
-    })
-  )
+        await c.env.DRAWINGS_KV.put(`summary:${d.id}`, resp.response || '')
+        summaries.push({ id: d.id, summary: resp.response })
+      })
+    )
+  }
 
   return c.json({ ok: true, summaries })
 })
@@ -205,8 +248,8 @@ leaderboard.get('/api/leaderboard/insights', async (c) => {
       continue
     }
     const drawings = await c.env.DB.prepare(
-      `SELECT * FROM drawings WHERE room_id = '${row.room_id}'`
-    ).all()
+      'SELECT * FROM drawings WHERE room_id = ?'
+    ).bind(row.room_id).all()
     parts.push(JSON.stringify(drawings.results))
   }
 
@@ -216,15 +259,16 @@ leaderboard.get('/api/leaderboard/insights', async (c) => {
   })
 
   await c.env.ANALYTICS_DB.prepare(
-    `INSERT INTO ai_cache (prompt, response) VALUES ('${megaPrompt}', '${resp.response || ''}')`
-  ).run()
+    'INSERT INTO ai_cache (prompt, response) VALUES (?, ?)'
+  ).bind(megaPrompt, resp.response || '').run()
 
   return c.json({ answer: resp.response })
 })
 
 leaderboard.delete('/api/leaderboard/purge', async (c) => {
   const token = c.req.header('x-admin-token')
-  if (token !== ADMIN_TOKEN) return c.json({ error: 'unauthorized' }, 401)
+  if (token !== getAdminToken(c.env)) return c.json({ error: 'unauthorized' }, 401)
+  // ... rest of the function unchanged
 
   await c.env.DB.prepare(`DELETE FROM sessions`).run()
   await c.env.DB.prepare(`DELETE FROM drawings`).run()

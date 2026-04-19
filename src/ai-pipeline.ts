@@ -7,7 +7,8 @@ const SYSTEM_PROMPT = `You are a helpful constellation analyzer. Follow the user
 
 aiPipeline.post('/api/ai/chain', async (c) => {
   const { prompt, rounds } = await c.req.json() as { prompt: string; rounds?: number }
-  const n = rounds || 50
+  // Cap rounds to prevent abuse and resource exhaustion
+  const n = Math.min(rounds || 50, 100)
 
   let current = prompt
   const history: any[] = []
@@ -20,8 +21,8 @@ aiPipeline.post('/api/ai/chain', async (c) => {
     history.push(current)
 
     await c.env.DB.prepare(
-      `INSERT INTO ai_cache (prompt, response) VALUES ('${current}', '${resp.response}')`
-    ).run()
+      'INSERT INTO ai_cache (prompt, response) VALUES (?, ?)'
+    ).bind(current, resp.response).run()
   }
 
   return c.json({ final: current, history })
@@ -31,8 +32,8 @@ aiPipeline.post('/api/ai/describe-user', async (c) => {
   const { username } = await c.req.json()
 
   const user: any = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${username}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ?'
+  ).bind(username).first()
 
   const fullContext = JSON.stringify(user)
   const prompt = `Describe this user based on their raw record: ${fullContext}`
@@ -44,11 +45,24 @@ aiPipeline.post('/api/ai/describe-user', async (c) => {
 aiPipeline.post('/api/ai/batch-generate', async (c) => {
   const { prompts } = await c.req.json() as { prompts: string[] }
 
-  const responses = await Promise.all(
-    prompts.map((p) =>
-      c.env.AI.run('@cf/leonardo/lucid-origin' as any, { prompt: p })
+  // Limit batch size to prevent abuse
+  if (prompts.length > 100) {
+    return c.json({ error: 'Max 100 prompts allowed' }, 400)
+  }
+
+  // Process in batches of 5 to avoid overwhelming the AI API
+  const batchSize = 5
+  const responses: any[] = []
+  
+  for (let i = 0; i < prompts.length; i += batchSize) {
+    const batch = prompts.slice(i, i + batchSize)
+    const batchResponses = await Promise.all(
+      batch.map((p) =>
+        c.env.AI.run('@cf/leonardo/lucid-origin' as any, { prompt: p })
+      )
     )
-  )
+    responses.push(...batchResponses)
+  }
 
   const keys: string[] = []
   for (let i = 0; i < responses.length; i++) {
@@ -64,11 +78,11 @@ aiPipeline.get('/api/ai/summarize-room/:roomId', async (c) => {
   const roomId = c.req.param('roomId')
 
   const drawings = await c.env.DB.prepare(
-    `SELECT * FROM drawings WHERE room_id = '${roomId}'`
-  ).all()
+    'SELECT * FROM drawings WHERE room_id = ?'
+  ).bind(roomId).all()
   const sessions = await c.env.DB.prepare(
-    `SELECT * FROM sessions WHERE room_id = '${roomId}'`
-  ).all()
+    'SELECT * FROM sessions WHERE room_id = ?'
+  ).bind(roomId).all()
 
   const everything = JSON.stringify({
     drawings: drawings.results,

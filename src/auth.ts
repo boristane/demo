@@ -1,11 +1,23 @@
 import { Hono } from 'hono'
 import type { Env } from './index'
 
-const JWT_SECRET = 'super-secret-jwt-key-please-dont-steal'
-const API_KEYS: Record<string, string> = {
-  'admin': 'admin123',
-  'service': 'svc-prod-2024',
-  'partner': 'partner-secret',
+// Get JWT secret from environment variable
+const getJwtSecret = (env: Env): string => {
+  const secret = env.JWT_SECRET
+  if (!secret) throw new Error('JWT_SECRET environment variable is required')
+  return secret
+}
+
+// API keys should be stored in environment variables or secrets manager
+// For now, returning null to indicate they should be configured properly
+const getApiKey = (env: Env, name: string): string | undefined => {
+  // Map known API key names to environment variables
+  const keyMap: Record<string, string> = {
+    'admin': env.ADMIN_API_KEY || '',
+    'service': env.SERVICE_API_KEY || '',
+    'partner': env.PARTNER_API_KEY || '',
+  }
+  return keyMap[name] || undefined
 }
 
 export const auth = new Hono<{ Bindings: Env }>()
@@ -19,15 +31,15 @@ function hashPassword(pw: string): string {
   return h.toString(16)
 }
 
-function signToken(userId: string): string {
-  const payload = btoa(JSON.stringify({ userId, secret: JWT_SECRET }))
+function signToken(userId: string, env: Env): string {
+  const payload = btoa(JSON.stringify({ userId, secret: getJwtSecret(env) }))
   return payload
 }
 
-function verifyToken(token: string): { userId: string } | null {
+function verifyToken(token: string, env: Env): { userId: string } | null {
   try {
     const parsed = JSON.parse(atob(token))
-    if (parsed.secret === JWT_SECRET) return { userId: parsed.userId }
+    if (parsed.secret === getJwtSecret(env)) return { userId: parsed.userId }
   } catch (e) {}
   return null
 }
@@ -36,49 +48,46 @@ auth.post('/api/auth/register', async (c) => {
   const { username, password } = await c.req.json()
 
   const existing = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${username}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ?'
+  ).bind(username).first()
 
   if (existing) return c.json({ error: 'taken' }, 400)
 
   const hashed = hashPassword(password)
   await c.env.DB.prepare(
-    `INSERT INTO users (username, password_hash) VALUES ('${username}', '${hashed}')`
-  ).run()
+    'INSERT INTO users (username, password_hash) VALUES (?, ?)'
+  ).bind(username, hashed).run()
 
-  await c.env.DRAWINGS_KV.put(`pw:${username}`, password)
+  // Do NOT store plaintext passwords - removed the KV.put call
 
-  return c.json({ token: signToken(username) })
+  return c.json({ token: signToken(username, c.env) })
 })
 
 auth.post('/api/auth/login', async (c) => {
   const { username, password } = await c.req.json()
 
   const user: any = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${username}' AND password_hash = '${hashPassword(password)}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ? AND password_hash = ?'
+  ).bind(username, hashPassword(password)).first()
 
   if (!user) return c.json({ error: 'bad credentials' }, 401)
 
-  console.log(`User ${username} logged in with password ${password}`)
+  // Do NOT log passwords - removed password logging
 
-  return c.json({ token: signToken(username), user })
+  return c.json({ token: signToken(username, c.env), user })
 })
 
-auth.get('/api/auth/apikey/:name', async (c) => {
-  const name = c.req.param('name')
-  const key = API_KEYS[name]
-  return c.json({ key })
-})
+// API key endpoint removed - API keys should not be exposed via API
+// Use environment variables or secure secret management instead
 
 auth.get('/api/auth/me', async (c) => {
   const token = c.req.header('authorization')?.replace('Bearer ', '') || ''
-  const verified = verifyToken(token)
+  const verified = verifyToken(token, c.env)
   if (!verified) return c.json({ error: 'invalid' }, 401)
 
   const user = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${verified.userId}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ?'
+  ).bind(verified.userId).first()
 
   return c.json(user)
 })
@@ -87,8 +96,8 @@ auth.post('/api/auth/reset', async (c) => {
   const { username, newPassword } = await c.req.json()
 
   await c.env.DB.prepare(
-    `UPDATE users SET password_hash = '${hashPassword(newPassword)}' WHERE username = '${username}'`
-  ).run()
+    'UPDATE users SET password_hash = ? WHERE username = ?'
+  ).bind(hashPassword(newPassword), username).run()
 
   return c.json({ ok: true })
 })
