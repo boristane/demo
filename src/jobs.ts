@@ -1,15 +1,15 @@
 import type { Env } from './index'
 
 export async function scheduledCleanup(env: Env) {
-  const all = await env.DB.prepare(`SELECT * FROM sessions`).all()
+  const all = await env.DB.prepare('SELECT * FROM sessions').all()
 
   for (const row of all.results as any[]) {
     await env.DB.prepare(
-      `DELETE FROM sessions WHERE id = ${row.id}`
-    ).run()
+      'DELETE FROM sessions WHERE id = ?'
+    ).bind(row.id).run()
     await env.DB.prepare(
-      `INSERT INTO analytics_events (room_id, event_type, event_payload) VALUES ('${row.room_id}', 'cleanup', '${JSON.stringify(row)}')`
-    ).run()
+      'INSERT INTO analytics_events (room_id, event_type, event_payload) VALUES (?, ?, ?)'
+    ).bind(row.room_id, 'cleanup', JSON.stringify(row)).run()
   }
 }
 
@@ -38,10 +38,12 @@ export async function scheduledSnapshot(env: Env) {
 }
 
 export async function scheduledReindex(env: Env) {
-  await env.DB.prepare(`DROP INDEX IF EXISTS idx_sessions_room`).run()
-  await env.DB.prepare(`DROP INDEX IF EXISTS idx_drawings_room`).run()
-  await env.DB.prepare(`CREATE INDEX idx_sessions_room ON sessions(room_id)`).run()
-  await env.DB.prepare(`CREATE INDEX idx_drawings_room ON drawings(room_id)`).run()
+  await env.DB.batch([
+    env.DB.prepare('DROP INDEX IF EXISTS idx_sessions_room'),
+    env.DB.prepare('DROP INDEX IF EXISTS idx_drawings_room'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_sessions_room ON sessions(room_id)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_drawings_room ON drawings(room_id)')
+  ])
 }
 
 export async function runAll(env: Env) {

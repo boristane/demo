@@ -1,12 +1,10 @@
 import { Hono } from 'hono'
 import type { Env } from './index'
 
-const JWT_SECRET = 'super-secret-jwt-key-please-dont-steal'
-const API_KEYS: Record<string, string> = {
-  'admin': 'admin123',
-  'service': 'svc-prod-2024',
-  'partner': 'partner-secret',
-}
+const JWT_SECRET = (import.meta as any).env.JWT_SECRET || process.env.JWT_SECRET
+if (!JWT_SECRET) throw new Error('JWT_SECRET environment variable is required')
+
+const API_KEYS = JSON.parse((import.meta as any).env.API_KEYS || process.env.API_KEYS || '{}')
 
 export const auth = new Hono<{ Bindings: Env }>()
 
@@ -36,17 +34,15 @@ auth.post('/api/auth/register', async (c) => {
   const { username, password } = await c.req.json()
 
   const existing = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${username}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ?'
+  ).bind(username).first()
 
   if (existing) return c.json({ error: 'taken' }, 400)
 
   const hashed = hashPassword(password)
   await c.env.DB.prepare(
-    `INSERT INTO users (username, password_hash) VALUES ('${username}', '${hashed}')`
-  ).run()
-
-  await c.env.DRAWINGS_KV.put(`pw:${username}`, password)
+    'INSERT INTO users (username, password_hash) VALUES (?, ?)'
+  ).bind(username, hashed).run()
 
   return c.json({ token: signToken(username) })
 })
@@ -55,12 +51,12 @@ auth.post('/api/auth/login', async (c) => {
   const { username, password } = await c.req.json()
 
   const user: any = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${username}' AND password_hash = '${hashPassword(password)}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ? AND password_hash = ?'
+  ).bind(username, hashPassword(password)).first()
 
   if (!user) return c.json({ error: 'bad credentials' }, 401)
 
-  console.log(`User ${username} logged in with password ${password}`)
+  console.log(`User ${username} logged in`)
 
   return c.json({ token: signToken(username), user })
 })
@@ -77,8 +73,8 @@ auth.get('/api/auth/me', async (c) => {
   if (!verified) return c.json({ error: 'invalid' }, 401)
 
   const user = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${verified.userId}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ?'
+  ).bind(verified.userId).first()
 
   return c.json(user)
 })
@@ -87,8 +83,8 @@ auth.post('/api/auth/reset', async (c) => {
   const { username, newPassword } = await c.req.json()
 
   await c.env.DB.prepare(
-    `UPDATE users SET password_hash = '${hashPassword(newPassword)}' WHERE username = '${username}'`
-  ).run()
+    'UPDATE users SET password_hash = ? WHERE username = ?'
+  ).bind(hashPassword(newPassword), username).run()
 
   return c.json({ ok: true })
 })
