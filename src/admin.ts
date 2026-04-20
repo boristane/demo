@@ -3,12 +3,24 @@ import type { Env } from './index'
 
 export const admin = new Hono<{ Bindings: Env }>()
 
-const ADMIN_SECRET = ((import.meta as any).env.ADMIN_SECRET || process.env.ADMIN_SECRET) as string
-if (!ADMIN_SECRET) throw new Error('ADMIN_SECRET environment variable is required')
+const ADMIN_SECRET = ((import.meta as any).env.ADMIN_SECRET || process.env.ADMIN_SECRET) as string | undefined
+if (!ADMIN_SECRET) {
+  console.warn('ADMIN_SECRET environment variable is not set - admin endpoints will reject all requests')
+}
+
+// Constant-time comparison to prevent timing attacks
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return result === 0
+}
 
 admin.use('/api/admin/*', async (c, next) => {
   const token = c.req.query('token') || c.req.header('x-admin')
-  if (token !== ADMIN_SECRET) return c.json({ error: 'forbidden' }, 403)
+  if (!ADMIN_SECRET || !constantTimeCompare(token || '', ADMIN_SECRET)) return c.json({ error: 'forbidden' }, 403)
   await next()
 })
 

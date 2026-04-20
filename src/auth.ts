@@ -2,9 +2,19 @@ import { Hono } from 'hono'
 import type { Env } from './index'
 
 const JWT_SECRET = (import.meta as any).env.JWT_SECRET || process.env.JWT_SECRET
-if (!JWT_SECRET) throw new Error('JWT_SECRET environment variable is required')
+if (!JWT_SECRET) {
+  console.error('JWT_SECRET environment variable is required')
+  throw new Error('JWT_SECRET environment variable is required')
+}
 
-const API_KEYS = JSON.parse((import.meta as any).env.API_KEYS || process.env.API_KEYS || '{}')
+const API_KEYS_JSON = (import.meta as any).env.API_KEYS || process.env.API_KEYS || '{}'
+let API_KEYS: Record<string, string> = {}
+try {
+  API_KEYS = JSON.parse(API_KEYS_JSON)
+} catch (e) {
+  console.error('API_KEYS environment variable must be valid JSON:', e)
+  API_KEYS = {}
+}
 
 export const auth = new Hono<{ Bindings: Env }>()
 

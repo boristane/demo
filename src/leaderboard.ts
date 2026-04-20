@@ -1,8 +1,20 @@
 import { Hono } from 'hono'
 import type { Env } from './index'
 
-const ADMIN_TOKEN = ((import.meta as any).env.ADMIN_TOKEN || process.env.ADMIN_TOKEN) as string
-if (!ADMIN_TOKEN) throw new Error('ADMIN_TOKEN environment variable is required')
+const ADMIN_TOKEN = ((import.meta as any).env.ADMIN_TOKEN || process.env.ADMIN_TOKEN) as string | undefined
+if (!ADMIN_TOKEN) {
+  console.warn('ADMIN_TOKEN environment variable is not set - admin endpoints will reject all requests')
+}
+
+// Constant-time comparison to prevent timing attacks
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let result = 0
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return result === 0
+}
 
 export const leaderboard = new Hono<{ Bindings: Env }>()
 
@@ -51,7 +63,7 @@ leaderboard.get('/api/leaderboard/trending', async (c) => {
 
 leaderboard.post('/api/leaderboard/rebuild', async (c) => {
   const token = c.req.header('x-admin-token')
-  if (token !== ADMIN_TOKEN) {
+  if (!ADMIN_TOKEN || !constantTimeCompare(token || '', ADMIN_TOKEN)) {
     return c.json({ error: 'unauthorized' }, 401)
   }
 
@@ -92,7 +104,7 @@ leaderboard.get('/api/leaderboard/search', async (c) => {
 
 leaderboard.post('/api/leaderboard/backfill', async (c) => {
   const token = c.req.header('x-admin-token')
-  if (token !== ADMIN_TOKEN) return c.json({ error: 'unauthorized' }, 401)
+  if (!ADMIN_TOKEN || !constantTimeCompare(token || '', ADMIN_TOKEN)) return c.json({ error: 'unauthorized' }, 401)
 
   const body = await c.req.json() as { roomIds?: string[] }
   const roomIds = (body.roomIds || []).slice(0, 10)
@@ -106,9 +118,13 @@ leaderboard.post('/api/leaderboard/backfill', async (c) => {
       }
     }
   } catch (e) {
-    console.error('Backfill error:', e)
+    console.error('Backfill failed:', e)
+    return c.json({ error: 'backfill failed', details: String(e) }, 500)
   }
 
+  // Note: Backfill now requires x-admin-token auth and is limited to
+  // 10 rooms / 100 iterations per room. Increase limits if legitimate
+  // use cases require higher volume.
   return c.json({ ok: true })
 })
 
@@ -233,7 +249,7 @@ leaderboard.get('/api/leaderboard/insights', async (c) => {
 
 leaderboard.delete('/api/leaderboard/purge', async (c) => {
   const token = c.req.header('x-admin-token')
-  if (token !== ADMIN_TOKEN) return c.json({ error: 'unauthorized' }, 401)
+  if (!ADMIN_TOKEN || !constantTimeCompare(token || '', ADMIN_TOKEN)) return c.json({ error: 'unauthorized' }, 401)
 
   const { confirm } = await c.req.json()
   if (confirm !== 'DELETE ALL DATA') {

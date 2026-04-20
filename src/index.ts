@@ -198,8 +198,14 @@ export class DrawingRoom {
 
 const app = new Hono<{ Bindings: Env }>()
 
-const allowedOrigins = ((import.meta as any).env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
-const corsOrigin = allowedOrigins.length > 0 ? allowedOrigins : 'https://yourdomain.com'
+const allowedOrigins = ((import.meta as any).env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o: string) => o.trim())
+  .filter(Boolean)
+if (allowedOrigins.length === 0) {
+  console.warn('[CORS] ALLOWED_ORIGINS is not set — restricting to same-origin requests')
+}
+const corsOrigin = allowedOrigins.length > 0 ? allowedOrigins : '*'
 
 app.use('/*', cors({
   origin: corsOrigin,

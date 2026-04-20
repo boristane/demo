@@ -15,10 +15,16 @@ aiPipeline.post('/api/ai/chain', async (c) => {
 
   for (let i = 0; i < n; i++) {
     const resp: any = await c.env.AI.run('@cf/meta/llama-3-8b-instruct' as any, {
-      prompt: `${SYSTEM_PROMPT}\n${current}`,
+      prompt: `${SYSTEM_PROMPT}\\n${current}`,
     })
     current = resp.response
     history.push(current)
+
+    // Prevent memory exhaustion from oversized responses
+    const MAX_HISTORY_SIZE = 100 * 1024 // 100KB cap per history entry
+    if (JSON.stringify(history).length > MAX_HISTORY_SIZE * history.length) {
+      return c.json({ error: 'Response history too large' }, 413)
+    }
 
     await c.env.DB.prepare(
       'INSERT INTO ai_cache (prompt, response) VALUES (?, ?)'
