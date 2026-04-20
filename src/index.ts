@@ -10,7 +10,7 @@ export interface Env {
 }
 
 interface DrawingMessage {
-  type: 'join' | 'draw_line' | 'clear' | 'user_joined' | 'user_left' | 'line_drawn' | 'canvas_cleared' | 'init' | 'constellation_found'
+  type: 'join' | 'draw_line' | 'clear' | 'user_joined' | 'user_left' | 'line_drawn' | 'canvas_cleared' | 'init' | 'constellation_found' | 'rename_room' | 'room_renamed'
   userId?: string
   name?: string
   color?: string
@@ -19,6 +19,7 @@ interface DrawingMessage {
   participants?: Array<[string, Participant]>
   lines?: Line[]
   result?: string
+  roomName?: string
 }
 
 interface Point {
@@ -58,6 +59,7 @@ export class DrawingRoom {
   private participants: Map<string, Participant> = new Map()
   private lines: Line[] = []
   private colorIndex: number = 0
+  private name: string = ''
 
   async fetch(request: Request) {
     const url = new URL(request.url)
@@ -103,11 +105,17 @@ export class DrawingRoom {
               color: color
             })
             
+            // Initialize room name if not set
+            if (!this.name) {
+              this.name = this.sessions.get(webSocket) || 'Room'
+            }
+
             // Send init message to the joining user
             webSocket.send(JSON.stringify({
               type: 'init',
               userId,
               color,
+              roomName: this.name,
               participants: Array.from(this.participants.entries()),
               lines: this.lines
             }))
@@ -153,6 +161,16 @@ export class DrawingRoom {
             this.broadcast({
               type: 'canvas_cleared'
             })
+            break
+
+          case 'rename_room':
+            if (message.name && message.name.trim()) {
+              this.name = message.name.trim()
+              this.broadcast({
+                type: 'room_renamed',
+                roomName: this.name
+              })
+            }
             break
         }
       } catch (error) {

@@ -64,6 +64,64 @@ header {
     background: #f8f9fa;
     border-radius: 8px;
     border: 1px solid #dee2e6;
+    flex-wrap: wrap;
+}
+
+.room-name-section {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-right: 1rem;
+    padding-right: 1rem;
+    border-right: 1px solid #dee2e6;
+}
+
+.room-name-display {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #495057;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.room-name-display:hover {
+    background-color: rgba(99, 102, 241, 0.1);
+}
+
+.room-name-input {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #495057;
+    padding: 0.25rem 0.5rem;
+    border: 2px solid #667eea;
+    border-radius: 4px;
+    background: #ffffff;
+    outline: none;
+    max-width: 150px;
+    font-family: inherit;
+}
+
+.rename-btn {
+    background: none;
+    border: none;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.rename-btn:hover {
+    color: #667eea;
+    background-color: rgba(99, 102, 241, 0.1);
 }
 
 .room-label {
