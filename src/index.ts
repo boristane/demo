@@ -60,9 +60,50 @@ export class DrawingRoom {
   private lines: Line[] = []
   private colorIndex: number = 0
   private name: string = ''
+  private roomId: string = ''
+  private creatorId: string = ''
+  private renameCooldowns = new Map<string, number>()
+  private db: D1Database | null = null
+
+  setRoomId(id: string, db: D1Database) {
+    this.roomId = id
+    this.db = db
+    if (!this.name) {
+      this.name = id
+    }
+  }
+
+  private async getRoomName(): Promise<string> {
+    if (!this.db || !this.roomId) return this.roomId || 'Room'
+    const result = await this.db.prepare(
+      'SELECT name FROM rooms WHERE room_id = ?'
+    ).bind(this.roomId).first()
+    return (result?.name as string) || this.roomId
+  }
+
+  private async setRoomName(name: string): Promise<void> {
+    if (!this.db || !this.roomId) return
+    await this.db.prepare(
+      'INSERT INTO rooms (room_id, name) VALUES (?, ?) ON CONFLICT(room_id) DO UPDATE SET name = ?'
+    ).bind(this.roomId, name, name).run()
+  }
 
   async fetch(request: Request) {
     const url = new URL(request.url)
+    
+    // Initialize roomId from request header if provided
+    const roomIdFromHeader = request.headers.get('X-Room-Id')
+    if (roomIdFromHeader && !this.roomId) {
+      this.roomId = roomIdFromHeader
+      if (!this.name) {
+        this.name = roomIdFromHeader
+      }
+    }
+    
+    // Try to get DB from global bindings if available
+    if (!this.db && (globalThis as unknown as Record<string, D1Database>).DB) {
+      this.db = (globalThis as unknown as Record<string, D1Database>).DB
+    }
     
     if (url.pathname === '/websocket') {
       if (request.headers.get('Upgrade') !== 'websocket') {
@@ -105,9 +146,15 @@ export class DrawingRoom {
               color: color
             })
             
-            // Initialize room name if not set
+            // Set creator if not set (first user becomes creator)
+            if (!this.creatorId) {
+              this.creatorId = userId
+            }
+            
+            // Initialize room name from DB if not set
             if (!this.name) {
-              this.name = this.sessions.get(webSocket) || 'Room'
+              const persistedName = await this.getRoomName()
+              this.name = persistedName || this.roomId || 'Room'
             }
 
             // Send init message to the joining user
@@ -163,15 +210,39 @@ export class DrawingRoom {
             })
             break
 
-          case 'rename_room':
-            if (message.name && message.name.trim()) {
-              this.name = message.name.trim()
-              this.broadcast({
-                type: 'room_renamed',
-                roomName: this.name
-              })
+          case 'rename_room': {
+            // Rate limiting: 5 second cooldown per user
+            const now = Date.now()
+            const lastRename = this.renameCooldowns.get(userId) || 0
+            if (now - lastRename < 5000) {
+              webSocket.send(JSON.stringify({ type: 'error', message: 'Please wait before renaming again' }))
+              break
             }
+            
+            // Authorization: only creator can rename
+            if (userId !== this.creatorId) {
+              webSocket.send(JSON.stringify({ type: 'error', message: 'Only room creator can rename' }))
+              break
+            }
+            
+            // Validation: enforce 1-30 character limit server-side
+            const trimmedName = message.name?.trim() || ''
+            if (!trimmedName || trimmedName.length > 30) {
+              webSocket.send(JSON.stringify({ type: 'error', message: 'Room name must be 1-30 characters' }))
+              break
+            }
+            
+            // Apply rename
+            this.name = trimmedName
+            this.renameCooldowns.set(userId, now)
+            await this.setRoomName(trimmedName)
+            
+            this.broadcast({
+              type: 'room_renamed',
+              roomName: this.name
+            })
             break
+          }
         }
       } catch (error) {
         console.error('Error handling message:', error)
@@ -221,6 +292,7 @@ app.get('/api/room/:roomId/websocket', async (c) => {
   return room.fetch(new Request('http://fake-host/websocket', {
     headers: {
       'Upgrade': 'websocket',
+      'X-Room-Id': roomId,
     },
   }))
 })
