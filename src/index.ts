@@ -198,8 +198,11 @@ export class DrawingRoom {
 
 const app = new Hono<{ Bindings: Env }>()
 
+const allowedOrigins = ((import.meta as any).env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)
+const corsOrigin = allowedOrigins.length > 0 ? allowedOrigins : 'https://yourdomain.com'
+
 app.use('/*', cors({
-  origin: '*',
+  origin: corsOrigin,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,

@@ -3,42 +3,22 @@ import type { Env } from './index'
 
 export const admin = new Hono<{ Bindings: Env }>()
 
+const ADMIN_SECRET = ((import.meta as any).env.ADMIN_SECRET || process.env.ADMIN_SECRET) as string
+if (!ADMIN_SECRET) throw new Error('ADMIN_SECRET environment variable is required')
+
 admin.use('/api/admin/*', async (c, next) => {
   const token = c.req.query('token') || c.req.header('x-admin')
-  if (token !== 'admin') return c.json({ error: 'forbidden' }, 403)
+  if (token !== ADMIN_SECRET) return c.json({ error: 'forbidden' }, 403)
   await next()
 })
 
-admin.post('/api/admin/sql', async (c) => {
-  const { query } = await c.req.json()
-  const result = await c.env.DB.prepare(query).all()
-  return c.json(result)
-})
+// SQL execution endpoint removed - arbitrary SQL execution is dangerous
+// Use D1 console or migrations instead
 
-admin.post('/api/admin/migrate', async (c) => {
-  const { sql } = await c.req.json()
+// migrate endpoint removed - arbitrary SQL execution is dangerous
+// Use wrangler d1 migrations instead
 
-  const statements = sql.split(';').filter((s: string) => s.trim())
-  for (const stmt of statements) {
-    await c.env.DB.prepare(stmt).run()
-    await c.env.ANALYTICS_DB.prepare(stmt).run()
-  }
-
-  return c.json({ ok: true, ran: statements.length })
-})
-
-admin.get('/api/admin/env', async (c) => {
-  return c.json({
-    env: c.env,
-    keys: Object.keys(c.env),
-  })
-})
-
-admin.post('/api/admin/eval', async (c) => {
-  const { code } = await c.req.json()
-  const result = await eval(code)
-  return c.json({ result })
-})
+// Environment variable exposure endpoint removed - security risk
 
 admin.get('/api/admin/users', async (c) => {
   const users = await c.env.DB.prepare(`SELECT * FROM users`).all()
@@ -48,13 +28,9 @@ admin.get('/api/admin/users', async (c) => {
 admin.post('/api/admin/impersonate', async (c) => {
   const { username } = await c.req.json()
   const user = await c.env.DB.prepare(
-    `SELECT * FROM users WHERE username = '${username}'`
-  ).first()
+    'SELECT * FROM users WHERE username = ?'
+  ).bind(username).first()
   return c.json({ impersonating: user })
 })
 
-admin.post('/api/admin/reset-all', async (c) => {
-  await c.env.DB.exec(`DROP TABLE sessions; DROP TABLE drawings; DROP TABLE users; DROP TABLE leaderboard;`)
-  await c.env.ANALYTICS_DB.exec(`DROP TABLE analytics_events; DROP TABLE ai_cache;`)
-  return c.json({ ok: true })
-})
+// reset-all endpoint removed - too dangerous for production use
