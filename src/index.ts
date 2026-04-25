@@ -1,5 +1,8 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { createLogger, WideEventBuilder, Logger } from './logger'
+import { wideEventLogger } from './middleware/logger'
+import type { Variables } from './types'
 
 export interface Env {
   DRAWING_ROOM: DurableObjectNamespace
@@ -7,6 +10,7 @@ export interface Env {
   DB: D1Database
   AI: Ai
   ASSETS: Fetcher
+  STAGE: string
 }
 
 interface DrawingMessage {
@@ -58,6 +62,16 @@ export class DrawingRoom {
   private participants: Map<string, Participant> = new Map()
   private lines: Line[] = []
   private colorIndex: number = 0
+  private logger: Logger
+
+  constructor(state: unknown, env: Env) {
+    this.logger = new Logger({
+      service: 'constellation-connect',
+      version: '0.0.0',
+      environment: env.STAGE || 'development',
+      region: 'auto',
+    })
+  }
 
   async fetch(request: Request) {
     const url = new URL(request.url)
@@ -85,14 +99,26 @@ export class DrawingRoom {
     webSocket.accept()
     
     const userId = crypto.randomUUID()
+    const sessionStartTime = Date.now()
     this.sessions.set(webSocket, userId)
 
+    // Log session start with wide event pattern
+    this.logger.info({
+      event_type: 'websocket_session_start',
+      user_id: userId,
+      session_start_time: new Date().toISOString(),
+      active_sessions: this.sessions.size,
+      active_participants: this.participants.size,
+    })
+
     webSocket.addEventListener('message', async (event) => {
+      const messageStartTime = Date.now()
+      
       try {
         const message = JSON.parse(event.data as string)
         
         switch (message.type) {
-          case 'join':
+          case 'join': {
             // Assign a color to the new user
             const color = COLORS[this.colorIndex % COLORS.length]
             this.colorIndex++
@@ -119,9 +145,20 @@ export class DrawingRoom {
               name: message.name,
               color
             }, webSocket)
+
+            // Log user join event with business context
+            this.logger.info({
+              event_type: 'websocket_user_join',
+              user_id: userId,
+              user_name: message.name || 'Anonymous',
+              user_color: color,
+              participant_count: this.participants.size,
+              message_handling_ms: Date.now() - messageStartTime,
+            })
             break
+          }
             
-          case 'draw_line':
+          case 'draw_line': {
             const participant = this.participants.get(userId)
             if (participant) {
               const line: Line = {
@@ -145,24 +182,53 @@ export class DrawingRoom {
                 color: participant.color,
                 userId
               })
+
+              // Log draw event with context
+              this.logger.info({
+                event_type: 'websocket_draw_line',
+                user_id: userId,
+                user_name: participant.name,
+                total_lines: this.lines.length,
+                message_handling_ms: Date.now() - messageStartTime,
+              })
             }
             break
+          }
             
-          case 'clear':
+          case 'clear': {
             this.lines = []
             this.broadcast({
               type: 'canvas_cleared'
             })
+
+            // Log clear event
+            this.logger.info({
+              event_type: 'websocket_clear_canvas',
+              user_id: userId,
+              participant_count: this.participants.size,
+              message_handling_ms: Date.now() - messageStartTime,
+            })
             break
+          }
         }
       } catch (error) {
-        console.error('Error handling message:', error)
+        const err = error instanceof Error ? error : new Error(String(error))
+        
+        // Structured error logging with context
+        this.logger.error({
+          event_type: 'websocket_message_error',
+          user_id: userId,
+          error_type: err.name,
+          error_message: err.message,
+          message_handling_ms: Date.now() - messageStartTime,
+        })
       }
     })
 
     webSocket.addEventListener('close', () => {
       this.sessions.delete(webSocket)
       const participant = this.participants.get(userId)
+      const sessionDurationMs = Date.now() - sessionStartTime
       
       if (participant) {
         this.participants.delete(userId)
@@ -171,6 +237,16 @@ export class DrawingRoom {
         this.broadcast({
           type: 'user_left',
           userId
+        })
+
+        // Log session end with business context
+        this.logger.info({
+          event_type: 'websocket_session_end',
+          user_id: userId,
+          user_name: participant.name,
+          session_duration_ms: sessionDurationMs,
+          remaining_participants: this.participants.size,
+          lines_drawn_by_user: this.lines.filter(l => l.userId === userId).length,
         })
       }
     })
@@ -187,7 +263,7 @@ export class DrawingRoom {
   }
 }
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 app.use('/*', cors({
   origin: '*',
@@ -195,10 +271,22 @@ app.use('/*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }))
 
+// Apply wide event logging middleware
+app.use(wideEventLogger())
+
 app.get('/api/room/:roomId/websocket', async (c) => {
   const roomId = c.req.param('roomId')
+  const requestId = c.get('requestId')
   const id = c.env.DRAWING_ROOM.idFromName(roomId)
   const room = c.env.DRAWING_ROOM.get(id)
+  
+  // Log WebSocket upgrade attempt
+  const logger = createLogger(c)
+  logger.info({
+    event_type: 'websocket_upgrade',
+    room_id: roomId,
+    request_id: requestId,
+  })
   
   return room.fetch(new Request('http://fake-host/websocket', {
     headers: {
@@ -208,8 +296,23 @@ app.get('/api/room/:roomId/websocket', async (c) => {
 })
 
 app.post('/api/analyze', async (c) => {
+  const logger = createLogger(c)
+  const requestId = c.get('requestId')
+  const wideEvent = new WideEventBuilder(logger, {
+    requestId,
+    method: 'POST',
+    path: '/api/analyze',
+  })
+  
   try {
     const { imageData } = await c.req.json()
+    
+    // Add business context
+    wideEvent.add({
+      event_type: 'analyze_request',
+      has_image_data: !!imageData,
+      image_data_length: imageData?.length,
+    })
     
     // Remove the data:image/png;base64, prefix if present
     const base64Data = imageData.replace(/^data:image\/[a-z]+;base64,/, '')
@@ -234,7 +337,7 @@ Be imaginative and poetic - every drawing tells a celestial story!
     const identificationInput = {
       image: [...imageBuffer],
       prompt: identificationPrompt,
-    };
+    }
     
     // Second analysis - describe the drawing pattern for visualization
     const detailPrompt = `Describe this drawing's star pattern in detail for creating a beautiful night sky scene:
@@ -250,7 +353,9 @@ Focus on the actual drawing pattern, not interpretation.`
     const detailInput = {
       image: [...imageBuffer],
       prompt: detailPrompt,
-    };
+    }
+    
+    const aiStartTime = Date.now()
     
     // Run all three AI calls in parallel for maximum speed
     const [identificationResponse, detailResponse] = await Promise.all([
@@ -262,16 +367,18 @@ Focus on the actual drawing pattern, not interpretation.`
         "@cf/llava-hf/llava-1.5-7b-hf",
         detailInput
       )
-    ]);
+    ])
+    
+    const aiLatencyMs = Date.now() - aiStartTime
 
     // Extract the description text from the response
-    let detailedDescription = '';
+    let detailedDescription = ''
     if (typeof detailResponse === 'object' && detailResponse.description) {
-      detailedDescription = detailResponse.description;
+      detailedDescription = detailResponse.description
     } else if (typeof detailResponse === 'string') {
-      detailedDescription = detailResponse;
+      detailedDescription = detailResponse
     } else {
-      detailedDescription = 'A constellation pattern drawn in the night sky with bright stars connected by faint lines';
+      detailedDescription = 'A constellation pattern drawn in the night sky with bright stars connected by faint lines'
     }
 
     // Randomly select creative background elements for variety
@@ -284,7 +391,7 @@ Focus on the actual drawing pattern, not interpretation.`
       'indigo midnight with silver moonlight',
       'emerald and sapphire cosmic ocean',
       'crimson and gold stellar nursery'
-    ];
+    ]
     
     const atmosphericEffects = [
       'ethereal mist and star fog',
@@ -293,61 +400,107 @@ Focus on the actual drawing pattern, not interpretation.`
       'crystalline ice clouds catching starlight',
       'bioluminescent space clouds',
       'prismatic light refractions'
-    ];
+    ]
     
-    const randomBackground = backgroundStyles[Math.floor(Math.random() * backgroundStyles.length)];
-    const randomEffect = atmosphericEffects[Math.floor(Math.random() * atmosphericEffects.length)];
+    const randomBackground = backgroundStyles[Math.floor(Math.random() * backgroundStyles.length)]
+    const randomEffect = atmosphericEffects[Math.floor(Math.random() * atmosphericEffects.length)]
     
     // Generate sky view image with creative and varied backgrounds
-    const imageGenerationPrompt = `Magical constellation art: Transform "${identificationResponse}" into a stunning constellation pattern. ${detailedDescription}. Background: ${randomBackground}. Atmosphere: ${randomEffect}. Bright twinkling stars connected by faint ethereal lines forming the shape, ${randomBackground}, dreamy and fantastical, highly artistic, varied and creative color palette, NOT plain blue sky, masterpiece quality`;
+    const imageGenerationPrompt = `Magical constellation art: Transform "${identificationResponse}" into a stunning constellation pattern. ${detailedDescription}. Background: ${randomBackground}. Atmosphere: ${randomEffect}. Bright twinkling stars connected by faint ethereal lines forming the shape, ${randomBackground}, dreamy and fantastical, highly artistic, varied and creative color palette, NOT plain blue sky, masterpiece quality`
 
     const imageGenerationInput = {
       prompt: imageGenerationPrompt,
-    };
+    }
 
-    // Start image generation (but don't wait for it if we want to return faster)
-    const skyViewPromise = c.env.AI.run(
+    // Start image generation
+    const skyViewStartTime = Date.now()
+    const skyViewResponse = await c.env.AI.run(
       "@cf/leonardo/lucid-origin" as any,
       imageGenerationInput
-    );
+    )
+    const skyViewLatencyMs = Date.now() - skyViewStartTime
 
-    // We can return the identification immediately and let the image generate
-    const skyViewResponse = await skyViewPromise;
-
+    const kvStartTime = Date.now()
+    
     // Store the analysis
     await c.env.DRAWINGS_KV.put(`analysis_${Date.now()}`, JSON.stringify({
       identification: identificationResponse,
       skyView: skyViewResponse,
       timestamp: Date.now()
     }), { expirationTtl: 86400 })
+    
+    const kvLatencyMs = Date.now() - kvStartTime
 
+    // Add outcome context before completing
+    wideEvent.add({
+      ai_latency_ms: aiLatencyMs,
+      skyview_latency_ms: skyViewLatencyMs,
+      kv_latency_ms: kvLatencyMs,
+      background_style: randomBackground,
+    })
+
+    wideEvent.complete(200, 'success')
+    
     return c.json({ 
       result: identificationResponse,
       skyView: skyViewResponse,
       backgroundStyle: randomBackground 
     })
   } catch (error) {
-    console.error('Analysis error:', error)
+    const err = error instanceof Error ? error : new Error(String(error))
+    
+    // Structured error logging with full context
+    wideEvent.completeWithError(500, err)
+    
     return c.json({ error: 'Analysis failed' }, 500)
   }
 })
 
 app.post('/api/session', async (c) => {
+  const logger = createLogger(c)
+  const requestId = c.get('requestId')
+  const wideEvent = new WideEventBuilder(logger, {
+    requestId,
+    method: 'POST',
+    path: '/api/session',
+  })
+  
   try {
     const { roomId, userId } = await c.req.json()
+    
+    // Add business context early
+    wideEvent.add({
+      event_type: 'create_session',
+      room_id: roomId,
+      user_id: userId,
+    })
     
     await c.env.DB.prepare(`
       INSERT INTO sessions (room_id, user_id, created_at)
       VALUES (?, ?, datetime('now'))
     `).bind(roomId, userId).run()
 
+    wideEvent.complete(200, 'success')
+    
     return c.json({ success: true })
   } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error))
+    
+    wideEvent.completeWithError(500, err)
+    
     return c.json({ error: 'Failed to create session' }, 500)
   }
 })
 
 app.get('/api/stats', async (c) => {
+  const logger = createLogger(c)
+  const requestId = c.get('requestId')
+  const wideEvent = new WideEventBuilder(logger, {
+    requestId,
+    method: 'GET',
+    path: '/api/stats',
+  })
+  
   try {
     const result = await c.env.DB.prepare(`
       SELECT COUNT(*) as total_sessions,
@@ -355,13 +508,28 @@ app.get('/api/stats', async (c) => {
       FROM sessions
       WHERE created_at > datetime('now', '-24 hours')
     `).first()
-
-    return c.json({
+    
+    const stats = {
       totalSessions: result?.total_sessions || 0,
       uniqueRooms: result?.unique_rooms || 0,
       timestamp: Date.now()
+    }
+
+    // Add business context
+    wideEvent.add({
+      event_type: 'get_stats',
+      total_sessions_24h: stats.totalSessions,
+      unique_rooms_24h: stats.uniqueRooms,
     })
+
+    wideEvent.complete(200, 'success')
+    
+    return c.json(stats)
   } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error))
+    
+    wideEvent.completeWithError(500, err)
+    
     return c.json({ error: 'Failed to fetch stats' }, 500)
   }
 })
