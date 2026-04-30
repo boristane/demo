@@ -1,33 +1,94 @@
-class DrawingApp {
+class LobbyApp {
     constructor() {
+        this.socket = null
+        this.list = document.getElementById('lobbyRoomsList')
+        this.empty = document.getElementById('lobbyEmpty')
+        document.getElementById('createRoomBtn').addEventListener('click', () => this.createRoom())
+        this.connect()
+    }
+
+    connect() {
+        const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/lobby/websocket`
+        this.socket = new WebSocket(wsUrl)
+
+        this.socket.onmessage = (event) => {
+            const message = JSON.parse(event.data)
+            if (message.type === 'rooms') {
+                this.render(message.rooms || [])
+            }
+        }
+
+        this.socket.onclose = () => {
+            setTimeout(() => this.connect(), 2000)
+        }
+    }
+
+    render(rooms) {
+        this.list.innerHTML = ''
+        if (rooms.length === 0) {
+            this.empty.style.display = 'block'
+            return
+        }
+        this.empty.style.display = 'none'
+
+        rooms
+            .slice()
+            .sort((a, b) => b.lastActivity - a.lastActivity)
+            .forEach((room) => {
+                const li = document.createElement('li')
+                li.className = 'lobby-room'
+
+                const info = document.createElement('div')
+                info.className = 'lobby-room-info'
+
+                const name = document.createElement('div')
+                name.className = 'lobby-room-name'
+                name.textContent = room.roomId
+
+                const meta = document.createElement('div')
+                meta.className = 'lobby-room-meta'
+                const namesText = room.names && room.names.length ? ` · ${room.names.join(', ')}` : ''
+                meta.textContent = `${room.count} ${room.count === 1 ? 'artist' : 'artists'}${namesText}`
+
+                info.appendChild(name)
+                info.appendChild(meta)
+
+                const joinBtn = document.createElement('button')
+                joinBtn.className = 'btn btn-primary'
+                joinBtn.textContent = 'Join'
+                joinBtn.addEventListener('click', () => {
+                    window.location.href = `${window.location.pathname}?room=${encodeURIComponent(room.roomId)}`
+                })
+
+                li.appendChild(info)
+                li.appendChild(joinBtn)
+                this.list.appendChild(li)
+            })
+    }
+
+    createRoom() {
+        const roomId = Math.random().toString(36).substring(2, 8)
+        window.location.href = `${window.location.pathname}?room=${roomId}`
+    }
+}
+
+class DrawingApp {
+    constructor(roomId) {
         this.canvas = document.getElementById('drawingCanvas')
         this.ctx = this.canvas.getContext('2d')
         this.socket = null
         this.userId = null
         this.userName = null
         this.userColor = null
-        this.roomId = this.getRoomId()
+        this.roomId = roomId
         this.participants = new Map()
         this.lines = []
-        
+
         // Drawing state
         this.isDrawing = false
         this.lastPoint = null
-        
-        this.init()
-    }
 
-    getRoomId() {
-        const params = new URLSearchParams(window.location.search)
-        let roomId = params.get('room')
-        
-        if (!roomId) {
-            roomId = Math.random().toString(36).substring(2, 8)
-            const newUrl = `${window.location.pathname}?room=${roomId}`
-            window.history.replaceState({}, '', newUrl)
-        }
-        
-        return roomId
+        this.init()
     }
 
     init() {
@@ -525,5 +586,14 @@ class DrawingApp {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    new DrawingApp()
+    const params = new URLSearchParams(window.location.search)
+    const roomId = params.get('room')
+
+    if (roomId) {
+        document.getElementById('roomView').style.display = ''
+        new DrawingApp(roomId)
+    } else {
+        document.getElementById('lobbyView').style.display = ''
+        new LobbyApp()
+    }
 })

@@ -3,10 +3,17 @@ import { cors } from 'hono/cors'
 
 export interface Env {
   DRAWING_ROOM: DurableObjectNamespace
+  LOBBY: DurableObjectNamespace
   DRAWINGS_KV: KVNamespace
   DB: D1Database
   AI: Ai
   ASSETS: Fetcher
+}
+
+interface LobbyRoomEntry {
+  count: number
+  names: string[]
+  lastActivity: number
 }
 
 interface DrawingMessage {
@@ -58,20 +65,29 @@ export class DrawingRoom {
   private participants: Map<string, Participant> = new Map()
   private lines: Line[] = []
   private colorIndex: number = 0
+  private roomId: string = ''
+  private env: Env
+
+  constructor(_state: DurableObjectState, env: Env) {
+    this.env = env
+  }
 
   async fetch(request: Request) {
     const url = new URL(request.url)
-    
+
     if (url.pathname === '/websocket') {
       if (request.headers.get('Upgrade') !== 'websocket') {
         return new Response('Expected WebSocket', { status: 400 })
       }
 
+      const rid = url.searchParams.get('roomId')
+      if (rid) this.roomId = rid
+
       const pair = new WebSocketPair()
       const [client, server] = Object.values(pair)
-      
+
       await this.handleSession(server)
-      
+
       return new Response(null, {
         status: 101,
         webSocket: client,
@@ -79,6 +95,21 @@ export class DrawingRoom {
     }
 
     return new Response('Not found', { status: 404 })
+  }
+
+  private async notifyLobby() {
+    if (!this.roomId) return
+    const id = this.env.LOBBY.idFromName('global')
+    const lobby = this.env.LOBBY.get(id)
+    await lobby.fetch(new Request('http://lobby/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomId: this.roomId,
+        count: this.participants.size,
+        names: Array.from(this.participants.values()).map((p) => p.name),
+      }),
+    }))
   }
 
   async handleSession(webSocket: WebSocket) {
@@ -119,6 +150,8 @@ export class DrawingRoom {
               name: message.name,
               color
             }, webSocket)
+
+            await this.notifyLobby()
             break
             
           case 'draw_line':
@@ -160,18 +193,20 @@ export class DrawingRoom {
       }
     })
 
-    webSocket.addEventListener('close', () => {
+    webSocket.addEventListener('close', async () => {
       this.sessions.delete(webSocket)
       const participant = this.participants.get(userId)
-      
+
       if (participant) {
         this.participants.delete(userId)
-        
+
         // Notify others that the user left
         this.broadcast({
           type: 'user_left',
           userId
         })
+
+        await this.notifyLobby()
       }
     })
   }
@@ -182,6 +217,68 @@ export class DrawingRoom {
     this.sessions.forEach((_, ws) => {
       if (ws !== exclude && ws.readyState === WebSocket.READY_STATE_OPEN) {
         ws.send(messageStr)
+      }
+    })
+  }
+}
+
+export class Lobby {
+  private rooms: Map<string, LobbyRoomEntry> = new Map()
+  private viewers: Set<WebSocket> = new Set()
+
+  async fetch(request: Request) {
+    const url = new URL(request.url)
+
+    if (url.pathname === '/update' && request.method === 'POST') {
+      const body = await request.json<{ roomId: string; count: number; names: string[] }>()
+      if (body.count <= 0) {
+        this.rooms.delete(body.roomId)
+      } else {
+        this.rooms.set(body.roomId, {
+          count: body.count,
+          names: body.names,
+          lastActivity: Date.now(),
+        })
+      }
+      this.broadcastRooms()
+      return new Response('ok')
+    }
+
+    if (url.pathname === '/list') {
+      return Response.json({ rooms: this.snapshot() })
+    }
+
+    if (url.pathname === '/websocket') {
+      if (request.headers.get('Upgrade') !== 'websocket') {
+        return new Response('Expected WebSocket', { status: 400 })
+      }
+      const pair = new WebSocketPair()
+      const [client, server] = Object.values(pair)
+      server.accept()
+      this.viewers.add(server)
+      server.send(JSON.stringify({ type: 'rooms', rooms: this.snapshot() }))
+      server.addEventListener('close', () => this.viewers.delete(server))
+      server.addEventListener('error', () => this.viewers.delete(server))
+      return new Response(null, { status: 101, webSocket: client })
+    }
+
+    return new Response('Not found', { status: 404 })
+  }
+
+  private snapshot() {
+    return Array.from(this.rooms.entries()).map(([roomId, entry]) => ({
+      roomId,
+      count: entry.count,
+      names: entry.names,
+      lastActivity: entry.lastActivity,
+    }))
+  }
+
+  private broadcastRooms() {
+    const msg = JSON.stringify({ type: 'rooms', rooms: this.snapshot() })
+    this.viewers.forEach((ws) => {
+      if (ws.readyState === WebSocket.READY_STATE_OPEN) {
+        ws.send(msg)
       }
     })
   }
@@ -199,8 +296,24 @@ app.get('/api/room/:roomId/websocket', async (c) => {
   const roomId = c.req.param('roomId')
   const id = c.env.DRAWING_ROOM.idFromName(roomId)
   const room = c.env.DRAWING_ROOM.get(id)
-  
-  return room.fetch(new Request('http://fake-host/websocket', {
+
+  return room.fetch(new Request(`http://fake-host/websocket?roomId=${encodeURIComponent(roomId)}`, {
+    headers: {
+      'Upgrade': 'websocket',
+    },
+  }))
+})
+
+app.get('/api/rooms', async (c) => {
+  const id = c.env.LOBBY.idFromName('global')
+  const lobby = c.env.LOBBY.get(id)
+  return lobby.fetch(new Request('http://fake-host/list'))
+})
+
+app.get('/api/lobby/websocket', async (c) => {
+  const id = c.env.LOBBY.idFromName('global')
+  const lobby = c.env.LOBBY.get(id)
+  return lobby.fetch(new Request('http://fake-host/websocket', {
     headers: {
       'Upgrade': 'websocket',
     },
