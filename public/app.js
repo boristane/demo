@@ -7,13 +7,15 @@ class DrawingApp {
         this.userName = null
         this.userColor = null
         this.roomId = this.getRoomId()
+        this.roomName = this.roomId
         this.participants = new Map()
         this.lines = []
-        
+        this.isEditingRoomName = false
+
         // Drawing state
         this.isDrawing = false
         this.lastPoint = null
-        
+
         this.init()
     }
 
@@ -74,6 +76,14 @@ class DrawingApp {
         document.getElementById('copyBtn').addEventListener('click', () => {
             this.copyRoomLink()
         })
+
+        // Room name rename button
+        const renameRoomBtn = document.getElementById('renameRoomBtn')
+        if (renameRoomBtn) {
+            renameRoomBtn.addEventListener('click', () => {
+                this.renameRoom()
+            })
+        }
         
         // Remove stop drawing button as we don't need it anymore
         const stopBtn = document.getElementById('stopDrawingBtn')
@@ -252,10 +262,18 @@ class DrawingApp {
             case 'init':
                 this.userId = message.userId
                 this.userColor = message.color
+                this.roomName = message.roomName || this.roomId
                 this.participants = new Map(message.participants)
                 this.lines = message.lines || []
+                this.updateRoomInfo()
                 this.updateParticipantsList()
                 this.redrawCanvas()
+                break
+
+            case 'room_renamed':
+                this.roomName = message.roomName || this.roomId
+                this.updateRoomInfo()
+                this.showNotification(`Room renamed to: ${this.roomName}`)
                 break
                 
             case 'user_joined':
@@ -491,7 +509,68 @@ class DrawingApp {
     }
 
     updateRoomInfo() {
-        document.getElementById('roomId').textContent = this.roomId
+        const roomIdElement = document.getElementById('roomId')
+        const roomNameDisplay = document.getElementById('roomNameDisplay')
+
+        if (roomIdElement) {
+            roomIdElement.textContent = this.roomId
+        }
+
+        if (roomNameDisplay) {
+            roomNameDisplay.textContent = this.roomName
+        }
+    }
+
+    renameRoom() {
+        if (this.isEditingRoomName) return
+
+        this.isEditingRoomName = true
+        const roomNameDisplay = document.getElementById('roomNameDisplay')
+        const currentName = this.roomName
+
+        // Create input element
+        const input = document.createElement('input')
+        input.type = 'text'
+        input.value = currentName
+        input.className = 'room-name-input'
+        input.maxLength = 30
+
+        // Replace display with input
+        roomNameDisplay.parentNode.replaceChild(input, roomNameDisplay)
+        input.focus()
+        input.select()
+
+        const saveRename = () => {
+            const newName = input.value.trim()
+            if (newName && newName !== this.roomName) {
+                this.roomName = newName
+                if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                    this.socket.send(JSON.stringify({
+                        type: 'rename_room',
+                        name: newName
+                    }))
+                }
+            }
+            this.isEditingRoomName = false
+            input.parentNode.replaceChild(roomNameDisplay, input)
+            this.updateRoomInfo()
+        }
+
+        const cancelRename = () => {
+            this.isEditingRoomName = false
+            input.parentNode.replaceChild(roomNameDisplay, input)
+            this.updateRoomInfo()
+        }
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                saveRename()
+            } else if (e.key === 'Escape') {
+                cancelRename()
+            }
+        })
+
+        input.addEventListener('blur', saveRename)
     }
 
     copyRoomLink() {

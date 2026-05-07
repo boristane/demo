@@ -1,5 +1,12 @@
 -- D1 Database Schema for Constellation Connect
 
+CREATE TABLE IF NOT EXISTS rooms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room_id TEXT NOT NULL,
