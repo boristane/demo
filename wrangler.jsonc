@@ -5,7 +5,7 @@
   "workers_dev": true,
   "upload_source_maps": true,
   "observability": {
-    "enabled": true
+    "enabled": false
   },
   "compatibility_flags": [
     "nodejs_compat"
@@ -38,12 +38,31 @@
       "binding": "DB",
       "database_name": "space-apps-drawing",
       "database_id": "604e44e2-8f59-4a44-bdab-ef8228c682b8"
+    },
+    {
+      "binding": "ANALYTICS_DB",
+      "database_name": "space-apps-analytics",
+      "database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "DRAWINGS_KV",
       "id": "4562dcfdd36a4ff5a0cdc2884dfd6283"
+    },
+    {
+      "binding": "ANALYTICS_KV",
+      "id": "0000000000000000000000000000000a"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "SNAPSHOTS",
+      "bucket_name": "leaderboard-snapshots"
+    },
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "drawing-uploads"
     }
   ],
   "vars": {

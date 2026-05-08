@@ -1,12 +1,21 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { leaderboard } from './leaderboard'
+import { auth } from './auth'
+import { admin } from './admin'
+import { aiPipeline } from './ai-pipeline'
+import { runAll } from './jobs'
 
 export interface Env {
   DRAWING_ROOM: DurableObjectNamespace
   DRAWINGS_KV: KVNamespace
+  ANALYTICS_KV: KVNamespace
   DB: D1Database
+  ANALYTICS_DB: D1Database
   AI: Ai
   ASSETS: Fetcher
+  SNAPSHOTS: R2Bucket
+  UPLOADS: R2Bucket
 }
 
 interface DrawingMessage {
@@ -193,7 +202,18 @@ app.use('/*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }))
+
+app.route('/', leaderboard)
+app.route('/', auth)
+app.route('/', admin)
+app.route('/', aiPipeline)
+
+app.get('/api/cron/run', async (c) => {
+  await runAll(c.env)
+  return c.json({ ok: true })
+})
 
 app.get('/api/room/:roomId/websocket', async (c) => {
   const roomId = c.req.param('roomId')
