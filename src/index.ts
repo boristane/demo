@@ -58,6 +58,7 @@ export class DrawingRoom {
   private participants: Map<string, Participant> = new Map()
   private lines: Line[] = []
   private colorIndex: number = 0
+  private roomName: string = ''
 
   async fetch(request: Request) {
     const url = new URL(request.url)
@@ -75,6 +76,27 @@ export class DrawingRoom {
       return new Response(null, {
         status: 101,
         webSocket: client,
+      })
+    }
+    
+    if (url.pathname === '/set-name' && request.method === 'POST') {
+      try {
+        const data = await request.json() as { name?: string }
+        this.roomName = data.name || ''
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Failed to set room name' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+    
+    if (url.pathname === '/get-name' && request.method === 'GET') {
+      return new Response(JSON.stringify({ name: this.roomName }), {
+        headers: { 'Content-Type': 'application/json' }
       })
     }
 
@@ -109,7 +131,8 @@ export class DrawingRoom {
               userId,
               color,
               participants: Array.from(this.participants.entries()),
-              lines: this.lines
+              lines: this.lines,
+              roomName: this.roomName
             }))
             
             // Notify others about the new user
@@ -205,6 +228,77 @@ app.get('/api/room/:roomId/websocket', async (c) => {
       'Upgrade': 'websocket',
     },
   }))
+})
+
+app.post('/api/room/:roomId/name', async (c) => {
+  try {
+    const roomId = c.req.param('roomId')
+    const { name } = await c.req.json()
+    
+    // Validate room name
+    if (!name || typeof name !== 'string') {
+      return c.json({ error: 'Invalid room name' }, 400)
+    }
+    
+    // Validate length (max 50 characters)
+    if (name.length > 50) {
+      return c.json({ error: 'Room name too long (max 50 characters)' }, 400)
+    }
+    
+    // Validate characters (alphanumeric, spaces, hyphens, underscores only)
+    if (!/^[a-zA-Z0-9\s\-_]+$/.test(name)) {
+      return c.json({ error: 'Room name contains invalid characters' }, 400)
+    }
+    
+    const trimmedName = name.trim()
+    
+    // Store in KV
+    await c.env.DRAWINGS_KV.put(`room_name_${roomId}`, trimmedName, {
+      expirationTtl: 86400 * 7 // 7 days
+    })
+    
+    // Also update the Durable Object
+    const id = c.env.DRAWING_ROOM.idFromName(roomId)
+    const room = c.env.DRAWING_ROOM.get(id)
+    
+    await room.fetch(new Request('http://fake-host/set-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: trimmedName })
+    }))
+    
+    return c.json({ success: true, name: trimmedName })
+  } catch (error) {
+    console.error('Error setting room name:', error)
+    return c.json({ error: 'Failed to set room name' }, 500)
+  }
+})
+
+app.get('/api/room/:roomId/name', async (c) => {
+  try {
+    const roomId = c.req.param('roomId')
+    
+    // Get from KV
+    const name = await c.env.DRAWINGS_KV.get(`room_name_${roomId}`)
+    
+    if (!name) {
+      // Get from Durable Object as fallback
+      const id = c.env.DRAWING_ROOM.idFromName(roomId)
+      const room = c.env.DRAWING_ROOM.get(id)
+      
+      const response = await room.fetch(new Request('http://fake-host/get-name', {
+        method: 'GET'
+      }))
+      
+      const data = await response.json() as { name?: string }
+      return c.json({ name: data.name || null })
+    }
+    
+    return c.json({ name })
+  } catch (error) {
+    console.error('Error getting room name:', error)
+    return c.json({ error: 'Failed to get room name' }, 500)
+  }
 })
 
 app.post('/api/analyze', async (c) => {

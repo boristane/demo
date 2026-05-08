@@ -66,6 +66,23 @@ header {
     border: 1px solid #dee2e6;
 }
 
+.room-name-display {
+    display: flex;
+    align-items: center;
+}
+
+.room-name {
+    font-weight: 600;
+    color: #6366f1;
+    font-size: 16px;
+}
+
+.room-id-small {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-left: 8px;
+}
+
 .room-label {
     color: #6c757d;
     font-size: 0.875rem;
