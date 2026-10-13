@@ -2,6 +2,8 @@
 
 A collaborative constellation drawing game where multiple users can create star patterns together in real-time. Built for the NASA International SpaceApps Challenge.
 
+This repository is a demo project.
+
 ## < Overview
 
 Constellation Connect is an interactive web application that allows multiple users to collaboratively draw constellations in real-time. Perfect for hackathon demonstrations where audience members can join from their phones and contribute to a shared cosmic canvas.
